@@ -19,7 +19,8 @@ const MCPConnectionContext = createContext<MCPConnectionContextValue | null>(nul
 export function useMcpReconnect() {
   const context = useContext(MCPConnectionContext);
   if (!context) {
-    throw new Error('useMcpReconnect must be used within MCPConnectionManager');
+    return (serverName: string) =>
+      Promise.reject(new Error(`useMcpReconnect: MCPConnectionManager not in tree (${serverName})`));
   }
   return context.reconnectMcpServer;
 }
@@ -27,7 +28,7 @@ export function useMcpReconnect() {
 export function useMcpToggleEnabled() {
   const context = useContext(MCPConnectionContext);
   if (!context) {
-    throw new Error('useMcpToggleEnabled must be used within MCPConnectionManager');
+    return () => Promise.resolve();
   }
   return context.toggleMcpServer;
 }

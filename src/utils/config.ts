@@ -1431,9 +1431,12 @@ function getConfig<A>(
   createDefault: () => A,
   throwOnInvalid?: boolean,
 ): A {
-  // Log a warning if config is accessed before it's allowed
+  // Config accessed before enableConfigs() — log the call site for debugging
+  // but allow the read. Throwing here causes deadlocks (module-level side effects
+  // in config.ts call getConfig() before the import that provides enableConfigs()
+  // can complete) and crashes React rendering during the preAction-to-action gap.
   if (!configReadingAllowed && process.env.NODE_ENV !== 'test') {
-    throw new Error('Config accessed before allowed.')
+    console.error(new Error('Config accessed before allowed.').stack)
   }
 
   const fs = getFsImplementation()

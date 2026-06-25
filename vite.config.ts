@@ -93,12 +93,25 @@ export default defineConfig({
 
       output: {
         format: 'es',
-        // Code splitting: Bun/JSC parses the entire single-file bundle eagerly,
-        // consuming ~1 GB RSS for a 17 MB output (vs ~220 MB on Node/V8 which
-        // lazy-parses). Splitting into chunks allows Bun to load modules on demand,
-        // bringing RSS down to ~300 MB.
         entryFileNames: 'cli.js',
         chunkFileNames: 'chunks/[name]-[hash].js',
+        manualChunks(id) {
+          if (id.includes('/node_modules/')) return 'vendor';
+          // Prevent module-level singleton state from being duplicated across chunks.
+          // These modules export mutable globals (configReadingAllowed, etc.) and must
+          // exist in exactly one chunk — otherwise enableConfigs() in one chunk won't
+          // propagate to getConfig() in another.
+          // React createContext() calls in these files must also stay singular;
+          // duplicated context objects break useContext() in consumers loaded from other chunks.
+          if (id.includes('/src/utils/config') ||
+              id.includes('/src/state/AppState') ||
+              id.includes('/src/state/store') ||
+              id.includes('/src/bootstrap/state') ||
+              id.includes('/src/services/mcp/MCPConnectionManager') ||
+              id.includes('/src/services/mcp/useManageMCPConnections')) {
+            return 'shared-state';
+          }
+        },
       },
 
       plugins: [

@@ -1,6 +1,6 @@
 import type * as React from 'react';
 import { useCallback, useEffect } from 'react';
-import { useAppStateStore, useSetAppState } from 'src/state/AppState.js';
+import { useAppStateStoreMaybeOutsideOfProvider, useSetAppStateMaybeOutsideOfProvider } from 'src/state/AppState.js';
 import type { Theme } from '../utils/theme.js';
 
 type Priority = 'low' | 'medium' | 'high' | 'immediate';
@@ -47,8 +47,8 @@ export function useNotifications(): {
   addNotification: AddNotificationFn;
   removeNotification: RemoveNotificationFn;
 } {
-  const store = useAppStateStore();
-  const setAppState = useSetAppState();
+  const store = useAppStateStoreMaybeOutsideOfProvider();
+  const setAppState = useSetAppStateMaybeOutsideOfProvider();
 
   // Process queue when current notification finishes or queue changes
   const processQueue = useCallback(() => {
@@ -270,7 +270,7 @@ export function useNotifications(): {
   // effect would be vestigial and make every caller re-render on queue changes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (store.getState().notifications.queue.length > 0) {
+    if (store !== null && store.getState().notifications.queue.length > 0) {
       processQueue();
     }
   }, []);

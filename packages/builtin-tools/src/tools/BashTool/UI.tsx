@@ -7,7 +7,7 @@ import { ShellProgressMessage } from 'src/components/shell/ShellProgressMessage.
 import { Box, Text } from '@anthropic/ink';
 import { useKeybinding } from 'src/keybindings/useKeybinding.js';
 import { useShortcutDisplay } from 'src/keybindings/useShortcutDisplay.js';
-import { useAppStateStore, useSetAppState } from 'src/state/AppState.js';
+import { useAppStateStoreMaybeOutsideOfProvider, useSetAppStateMaybeOutsideOfProvider } from 'src/state/AppState.js';
 import type { Tool } from 'src/Tool.js';
 import { backgroundAll } from 'src/tasks/LocalShellTask/LocalShellTask.js';
 import type { ProgressMessage } from 'src/types/message.js';
@@ -28,11 +28,12 @@ const MAX_COMMAND_DISPLAY_CHARS = 160;
 // Simple component to show background hint and handle ctrl+b
 // When ctrl+b is pressed, backgrounds ALL running foreground commands
 export function BackgroundHint({ onBackground }: { onBackground?: () => void } = {}): React.ReactElement | null {
-  const store = useAppStateStore();
-  const setAppState = useSetAppState();
+  const store = useAppStateStoreMaybeOutsideOfProvider();
+  const setAppState = useSetAppStateMaybeOutsideOfProvider();
 
-  // Handler for task:background - background all foreground tasks
+  // Handle for task:background - background all foreground tasks
   const handleBackground = React.useCallback(() => {
+    if (!store) return;
     // Background ALL foreground bash tasks
     backgroundAll(() => store.getState(), setAppState);
     // Also call the optional callback (used for non-bash tasks like agents)

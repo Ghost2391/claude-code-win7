@@ -65,7 +65,7 @@ import {
   startSelection,
   updateSelection,
 } from './selection.js';
-import { SYNC_OUTPUT_SUPPORTED, supportsExtendedKeys, type Terminal, writeDiffToTerminal } from './terminal.js';
+import { SYNC_OUTPUT_SUPPORTED, isProgressReportingAvailable, supportsExtendedKeys, type Terminal, writeDiffToTerminal } from './terminal.js';
 import {
   CURSOR_HOME,
   cursorMove,
@@ -451,8 +451,7 @@ export default class Ink {
       // Disable extended key reporting first — editors that don't speak
       // CSI-u (e.g. nano) show "Unknown sequence" for every Ctrl-<key> if
       // kitty/modifyOtherKeys stays active. exitAlternateScreen re-enables.
-      DISABLE_KITTY_KEYBOARD +
-        DISABLE_MODIFY_OTHER_KEYS +
+      (supportsExtendedKeys() ? DISABLE_KITTY_KEYBOARD + DISABLE_MODIFY_OTHER_KEYS : '') +
         (this.altScreenMouseTracking ? DISABLE_MOUSE_TRACKING : '') + // disable mouse (no-op if off)
         (this.altScreenActive ? '' : '\x1b[?1049h') + // enter alt (already in alt if fullscreen)
         '\x1b[?1004l' + // disable focus reporting
@@ -1626,17 +1625,23 @@ export default class Ink {
       writeSync(1, DISABLE_MOUSE_TRACKING);
       // Drain stdin so in-flight mouse events don't leak to the shell
       this.drainStdin();
-      // Disable extended key reporting (both kitty and modifyOtherKeys)
-      writeSync(1, DISABLE_MODIFY_OTHER_KEYS);
-      writeSync(1, DISABLE_KITTY_KEYBOARD);
+      // Disable extended key reporting (both kitty and modifyOtherKeys) —
+      // only if the terminal supports them, otherwise the raw CSI bytes
+      // leak as garbled text on basic terminals.
+      if (supportsExtendedKeys()) {
+        writeSync(1, DISABLE_MODIFY_OTHER_KEYS);
+        writeSync(1, DISABLE_KITTY_KEYBOARD);
+      }
       // Disable focus events (DECSET 1004)
       writeSync(1, DFE);
       // Disable bracketed paste mode
       writeSync(1, DBP);
       // Show cursor
       writeSync(1, SHOW_CURSOR);
-      // Clear iTerm2 progress bar
-      writeSync(1, CLEAR_ITERM2_PROGRESS);
+      // Clear iTerm2 progress bar — only if supported
+      if (isProgressReportingAvailable()) {
+        writeSync(1, CLEAR_ITERM2_PROGRESS);
+      }
       // Clear tab status (OSC 21337) so a stale dot doesn't linger
       if (supportsTabStatus()) writeSync(1, wrapForMultiplexer(CLEAR_TAB_STATUS));
     }

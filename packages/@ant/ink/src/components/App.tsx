@@ -366,8 +366,10 @@ export default class App extends PureComponent<Props, State> {
         return;
       }
 
-      this.props.stdout.write(DISABLE_MODIFY_OTHER_KEYS);
-      this.props.stdout.write(DISABLE_KITTY_KEYBOARD);
+      if (supportsExtendedKeys()) {
+        this.props.stdout.write(DISABLE_MODIFY_OTHER_KEYS);
+        this.props.stdout.write(DISABLE_KITTY_KEYBOARD);
+      }
       // Disable terminal focus reporting (DECSET 1004)
       this.props.stdout.write(DFE);
       // Disable bracketed paste mode

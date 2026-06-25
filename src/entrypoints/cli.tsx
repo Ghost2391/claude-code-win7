@@ -1,4 +1,7 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
+// Node 12 compatibility polyfills — MUST be first import.
+// Provides shims for fs.rmSync, crypto.randomUUID, structuredClone, and Bun APIs.
+import '../utils/node12compat.js';
 // Performance shim MUST be the first import — it replaces globalThis.performance
 // with a JS-backed implementation before React/OTel capture the native reference.
 // Without this, JSC's C++ Vector grows without bound in long-running sessions.
@@ -75,6 +78,40 @@ if (feature('ABLATION_BASELINE') && process.env.CLAUDE_CODE_ABLATION_BASELINE) {
  */
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
+
+  // Load .env file from the install directory (CLAUDE_HOME) or script directory.
+  // This runs before any dynamic imports so env vars are available to all modules.
+  {
+    const fs = await import('fs');
+    const path = await import('path');
+    const homeDir = process.env.CLAUDE_HOME || path.dirname(process.argv[1] || '');
+    const envFile = path.join(homeDir, '.env');
+    if (fs.existsSync(envFile)) {
+      const content = fs.readFileSync(envFile, 'utf-8');
+      const data = content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
+      for (const raw of data.split(/\r?\n/)) {
+        const trimmed = raw.trim();
+        if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith(';')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx <= 0) continue;
+        const key = trimmed.slice(0, eqIdx).trim();
+        const value = trimmed.slice(eqIdx + 1).trim();
+        if (value && !process.env[key]) {
+          process.env[key] = value;
+        }
+      }
+    }
+  }
+
+  // Enable config reads BEFORE any dynamic import — prevents "Config accessed
+  // before allowed" errors from React components that call getGlobalConfig()
+  // during initial render (before the Commander preAction hook runs init()).
+  try {
+    const { enableConfigs } = await import('../utils/config.js');
+    enableConfigs();
+  } catch {
+    // Config file may not exist on first run — safe to ignore.
+  }
 
   // Fast-path for --version/-v: zero module loading needed
   if (args.length === 1 && (args[0] === '--version' || args[0] === '-v' || args[0] === '-V')) {

@@ -105,9 +105,21 @@ function useAppStore(): AppStateStore {
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const store = useContext(AppStoreContext);
   if (!store) {
-    throw new ReferenceError('useAppState/useSetAppState cannot be called outside of an <AppStateProvider />');
+    return getFallbackStore();
   }
   return store;
+}
+
+let _fallbackStore: AppStateStore | null = null;
+function getFallbackStore(): AppStateStore {
+  if (!_fallbackStore) {
+    _fallbackStore = createStore<AppState>(getDefaultAppState(), () => {});
+  }
+  return _fallbackStore;
+}
+
+function useAppStoreMaybeOutsideOfProvider(): AppStateStore | null {
+  return useContext(AppStoreContext);
 }
 
 /**
@@ -172,4 +184,14 @@ export function useAppStateMaybeOutsideOfProvider<T>(selector: (state: AppState)
   return useSyncExternalStore(store ? store.subscribe : NOOP_SUBSCRIBE, () =>
     store ? selector(store.getState()) : undefined,
   );
+}
+
+export function useSetAppStateMaybeOutsideOfProvider(): (updater: (prev: AppState) => AppState) => void {
+  const store = useContext(AppStoreContext);
+  if (!store) return () => {};
+  return store.setState;
+}
+
+export function useAppStateStoreMaybeOutsideOfProvider(): AppStateStore | null {
+  return useContext(AppStoreContext);
 }
