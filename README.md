@@ -1,4 +1,10 @@
-# Claude Code Best V5 (CCB)
+# Claude Code Best V5 (CCB) — Win7 适配版
+
+> **Fork from [claude-code-best/claude-code](https://github.com/claude-code-best/claude-code)**  
+> 此分支适配 Windows 7 + Node.js 18 便携版 + OpenAI 兼容 API  
+> 部署指南见 [DEPLOY_WIN7.md](./DEPLOY_WIN7.md)
+
+---
 
 [![GitHub Stars](https://img.shields.io/github/stars/claude-code-best/claude-code?style=flat-square&logo=github&color=yellow)](https://github.com/claude-code-best/claude-code/stargazers)
 [![GitHub Contributors](https://img.shields.io/github/contributors/claude-code-best/claude-code?style=flat-square&color=green)](https://github.com/claude-code-best/claude-code/graphs/contributors)
