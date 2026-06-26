@@ -751,10 +751,13 @@ export default class Ink {
       if (this.needsEraseBeforePaint) {
         this.needsEraseBeforePaint = false;
         optimized.unshift(ERASE_THEN_HOME_PATCH);
-      } else if (process.env.ConEmuANSI || process.env.ConEmuPID) {
-        // ConEmu/Cmder: cursor positioning (CSI A/B/C/D) can drift from
-        // Ink's virtual model, causing content to stack on each redraw.
-        // Erase before every alt-screen frame to prevent accumulation.
+      } else if (process.platform === 'win32') {
+        // Windows console host (cmd, PowerShell, ConEmu): cursor positioning
+        // (CSI A/B/C/D) can drift from Ink's virtual model, causing content
+        // to stack on each redraw. Erase before every alt-screen frame to
+        // prevent accumulation. Windows Terminal (WT_SESSION) and VS Code
+        // integrated terminal use ConPTY and handle CSI correctly, but the
+        // minor flicker from ERASE_SCREEN is preferable to content stacking.
         optimized.unshift(ERASE_THEN_HOME_PATCH);
       } else {
         optimized.unshift(CURSOR_HOME_PATCH);
