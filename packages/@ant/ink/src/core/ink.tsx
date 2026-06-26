@@ -65,7 +65,7 @@ import {
   startSelection,
   updateSelection,
 } from './selection.js';
-import { SYNC_OUTPUT_SUPPORTED, isProgressReportingAvailable, supportsExtendedKeys, type Terminal, writeDiffToTerminal } from './terminal.js';
+import { SYNC_OUTPUT_SUPPORTED, isProgressReportingAvailable, supportsExtendedKeys, isLegacyWindowsConsole, type Terminal, writeDiffToTerminal } from './terminal.js';
 import {
   CURSOR_HOME,
   cursorMove,
@@ -845,7 +845,9 @@ export default class Ink {
     // becomes frontFrame (= next frame's prevScreen). If we applied the
     // selection overlay, that buffer has inverted cells. selActive/hlActive
     // are only ever true in alt-screen; in main-screen this is false→false.
-    this.prevFrameContaminated = selActive || hlActive;
+    // On legacy Windows consoles (Windows 7, cmder), always force full
+    // redraw to prevent content duplication and text stacking issues.
+    this.prevFrameContaminated = selActive || hlActive || isLegacyWindowsConsole();
 
     // A ScrollBox has pendingScrollDelta left to drain — schedule the next
     // frame. MUST NOT call this.scheduleRender() here: we're inside a

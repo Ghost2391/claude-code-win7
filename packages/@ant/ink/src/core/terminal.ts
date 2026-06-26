@@ -71,6 +71,17 @@ export function isSynchronizedOutputSupported(): boolean {
   // broken atomicity by chunking. Skip to save 16 bytes/frame + parser work.
   if (process.env.TMUX) return false
 
+  // Windows 7 and legacy consoles (including cmder on Win7) don't support
+  // DEC 2026 and may exhibit display corruption (duplicate content, stacking)
+  // when BSU/ESU sequences are used. Disable for all Windows except modern
+  // Windows Terminal.
+  if (process.platform === 'win32') {
+    // Only allow synchronized output in modern Windows Terminal
+    if (!process.env.WT_SESSION) {
+      return false
+    }
+  }
+
   const termProgram = process.env.TERM_PROGRAM
   const term = process.env.TERM
 
@@ -101,9 +112,6 @@ export function isSynchronizedOutputSupported(): boolean {
 
   // Zed uses the alacritty_terminal crate which supports DEC 2026
   if (process.env.ZED_TERM) return true
-
-  // Windows Terminal
-  if (process.env.WT_SESSION) return true
 
   // VTE-based terminals (GNOME Terminal, Tilix, etc.) since VTE 0.68
   const vteVersion = process.env.VTE_VERSION
@@ -171,9 +179,35 @@ export function supportsExtendedKeys(): boolean {
  *  SetConsoleCursorPosition follows the cursor into scrollback
  *  (microsoft/terminal#14774), yanking users to the top of their buffer
  *  mid-stream. WT_SESSION catches WSL-in-Windows-Terminal where platform
- *  is linux but output still routes through conhost. */
+ *  is linux but output still routes through conhost.
+ *  
+ *  Legacy Windows consoles (Windows 7, cmder) also have additional rendering
+ *  issues including content duplication and text stacking. */
 export function hasCursorUpViewportYankBug(): boolean {
   return process.platform === 'win32' || !!process.env.WT_SESSION
+}
+
+/** True if running on legacy Windows console (Windows 7 or old conhost).
+ *  Legacy consoles have poor ANSI support and require special handling
+ *  for rendering to avoid display corruption like duplicate content. */
+export function isLegacyWindowsConsole(): boolean {
+  if (process.platform !== 'win32') {
+    return false
+  }
+  
+  // Modern Windows Terminal is not legacy
+  if (process.env.WT_SESSION) {
+    return false
+  }
+  
+  // Check for cmder (uses legacy conhost)
+  if (process.env.CMDER_ROOT || process.env.CONEMU_TASK) {
+    return true
+  }
+  
+  // Plain Windows console without WT_SESSION is likely legacy
+  // This includes Windows 7's default console
+  return true
 }
 
 // Computed once at module load — terminal capabilities don't change mid-session.

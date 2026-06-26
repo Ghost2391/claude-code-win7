@@ -53,6 +53,30 @@ function isModernWindowsTerminal(): boolean {
 }
 
 /**
+ * Checks if running on legacy Windows console (Windows 7 or old conhost).
+ * Legacy consoles have poor ANSI support and require special handling.
+ */
+function isLegacyWindowsConsole(): boolean {
+  if (process.platform !== 'win32') {
+    return false
+  }
+  
+  // If it's a modern terminal, it's not legacy
+  if (isModernWindowsTerminal()) {
+    return false
+  }
+  
+  // Check for cmder (uses legacy conhost)
+  if (process.env.CMDER_ROOT || process.env.CONEMU_TASK === '{cmd::Cmder}') {
+    return true
+  }
+  
+  // Plain Windows console without WT_SESSION is likely legacy
+  // This includes Windows 7's default console
+  return true
+}
+
+/**
  * Returns the ANSI escape sequence to clear the terminal including scrollback.
  * Automatically detects terminal capabilities.
  */
@@ -60,6 +84,13 @@ export function getClearTerminalSequence(): string {
   if (process.platform === 'win32') {
     if (isModernWindowsTerminal()) {
       return ERASE_SCREEN + ERASE_SCROLLBACK + CURSOR_HOME
+    } else if (isLegacyWindowsConsole()) {
+      // Legacy Windows console (Windows 7, old cmder):
+      // - Use multiple clear operations to ensure full screen clear
+      // - Avoid ERASE_SCROLLBACK which may not be supported
+      // - Add explicit cursor home to prevent drift
+      // - Use Windows-specific HVP for better compatibility
+      return ERASE_SCREEN + ERASE_SCREEN + CURSOR_HOME_WINDOWS
     } else {
       // Legacy Windows console - can't clear scrollback
       return ERASE_SCREEN + CURSOR_HOME_WINDOWS
