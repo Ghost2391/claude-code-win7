@@ -756,6 +756,14 @@ export default class Ink {
         // Ink's virtual model, causing content to stack on each redraw.
         // Erase before every alt-screen frame to prevent accumulation.
         optimized.unshift(ERASE_THEN_HOME_PATCH);
+      } else if (
+        process.env.TERMINAL_EMULATOR === 'JetBrains-JediTerm' ||
+        process.env.TERMINAL_EMULATOR?.includes('JetBrains')
+      ) {
+        // JetBrains IDE terminal (IDEA, PyCharm, etc.): JediTerm's cursor
+        // positioning can drift from Ink's virtual model, same as ConEmu.
+        // Erase before every alt-screen frame to prevent accumulation.
+        optimized.unshift(ERASE_THEN_HOME_PATCH);
       } else {
         optimized.unshift(CURSOR_HOME_PATCH);
       }
