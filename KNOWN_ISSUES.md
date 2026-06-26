@@ -2,11 +2,12 @@
 
 ## 终端兼容性
 
-### Cmder 下内容堆叠
+### ~~Cmder 下内容堆叠~~ 已修复
 - **现象**：在 Cmder 终端中，`/plugin`、`/mcp` 等带选择交互的界面会出现内容逐帧叠加不消失
-- **原因**：Cinder (ConEmu) 的 ANSI 光标定位实现与 xterm 不完全一致，Ink 帧差分渲染依赖的光标位置与实际偏差
-- **影响**：仅 Cmder，IDEA 终端正常
-- **规避**：使用 IDEA 内置终端或 Windows Terminal
+- **原因**：ConEmu 的 ANSI 相对光标定位 (CSI A/B/C/D) 与 Ink 虚拟光标模型漂移
+- **修复**：`packages/@ant/ink/src/core/ink.tsx` — ConEmu 下每帧前发送 `ERASE_SCREEN + CURSOR_HOME` 清除旧内容
+- **副作用**：可能引入轻微闪烁（因 ConEmu 不支持 DEC 2026 同步更新，无 BSU/ESU 包裹）
+- **回退**：设置环境变量 `TERM_PROGRAM=anythingElse` 可绕过 ConEmu 检测
 
 ### /agent 下 ESC 无法退出
 - **现象**：在 IDEA 终端下选择 /agent 后按 ESC 无反应
