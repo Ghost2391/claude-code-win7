@@ -22,6 +22,7 @@ import {
 } from './screen.js'
 import {
   CURSOR_HOME,
+  cursorPosition,
   scrollDown as csiScrollDown,
   scrollUp as csiScrollUp,
   RESET_SCROLL_REGION,
@@ -701,6 +702,12 @@ function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number) {
     // to reset to column 0 on the current line without advancing
     // to the next line, then issue the cursor movement.
     if (inPendingWrap) {
+      if (process.platform === 'win32') {
+        return [
+          [{ type: 'stdout', content: cursorPosition(targetY + 1, targetX + 1) }],
+          { dx, dy },
+        ]
+      }
       return [
         [CARRIAGE_RETURN, { type: 'cursorMove', x: targetX, y: dy }],
         { dx, dy },
@@ -710,6 +717,15 @@ function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number) {
     // When moving to a different line, use carriage return (\r) to reset to
     // column 0 first, then cursor move.
     if (dy !== 0) {
+      if (process.platform === 'win32') {
+        // Windows console (cmd, PowerShell): CSI A/B (cursor up/down)
+        // can drift when near viewport boundaries, causing content to
+        // stack on each redraw. Use absolute CUP to avoid drift.
+        return [
+          [{ type: 'stdout', content: cursorPosition(targetY + 1, targetX + 1) }],
+          { dx, dy },
+        ]
+      }
       return [
         [CARRIAGE_RETURN, { type: 'cursorMove', x: targetX, y: dy }],
         { dx, dy },
