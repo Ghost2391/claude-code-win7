@@ -28,7 +28,6 @@ import {
   RESET_SCROLL_REGION,
   setScrollRegion,
 } from './termio/csi.js'
-import { isLegacyWindowsConsole } from './terminal.js'
 import { LINK_END, link as oscLink } from './termio/osc.js'
 
 type State = {
@@ -353,11 +352,7 @@ export class LogUpdate {
 
       // Legacy Windows console: always use absolute cursor positioning
       // to prevent drift and content duplication
-      if (isLegacyWindowsConsole()) {
-        moveCursorTo(screen, x, y)
-      } else {
-        moveCursorTo(screen, x, y)
-      }
+      moveCursorTo(screen, x, y)
 
       if (added) {
         const targetHyperlink = added.hyperlink
@@ -588,11 +583,7 @@ function renderFrameSlice(
 
       // Legacy Windows console: always use absolute cursor positioning
       // to prevent drift and content duplication
-      if (isLegacyWindowsConsole()) {
-        moveCursorTo(screen, x, y)
-      } else {
-        moveCursorTo(screen, x, y)
-      }
+      moveCursorTo(screen, x, y)
 
       // Handle hyperlink
       const targetHyperlink = cell.hyperlink
@@ -705,7 +696,7 @@ function writeCellWithStyleStr(
   return true
 }
 
-function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number, forceAbsolute = false) {
+function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number) {
   screen.txn(prev => {
     const dx = targetX - prev.x
     const dy = targetY - prev.y
@@ -714,13 +705,12 @@ function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number, f
     // Legacy Windows console (Windows 7, cmder): always use absolute cursor
     // positioning to prevent drift and content duplication issues
     const isLegacyWin32 = process.platform === 'win32' && !process.env.WT_SESSION
-    const useAbsolute = forceAbsolute || isLegacyWin32
 
     // If we're in pending wrap state (cursor.x >= width), use CR
     // to reset to column 0 on the current line without advancing
     // to the next line, then issue the cursor movement.
     if (inPendingWrap) {
-      if (useAbsolute) {
+      if (isLegacyWin32) {
         return [
           [{ type: 'stdout', content: cursorPosition(targetY + 1, targetX + 1) }],
           { dx, dy },
@@ -735,7 +725,7 @@ function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number, f
     // When moving to a different line, use carriage return (\r) to reset to
     // column 0 first, then cursor move.
     if (dy !== 0) {
-      if (useAbsolute) {
+      if (isLegacyWin32) {
         // Windows console (cmd, PowerShell) and legacy terminals: CSI A/B
         // (cursor up/down) can drift when near viewport boundaries, causing
         // content to stack on each redraw. Use absolute CUP to avoid drift.
@@ -751,7 +741,7 @@ function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number, f
     }
 
     // Standard same-line cursor move - but use absolute for legacy Windows
-    if (useAbsolute) {
+    if (isLegacyWin32) {
       return [
         [{ type: 'stdout', content: cursorPosition(targetY + 1, targetX + 1) }],
         { dx, dy },

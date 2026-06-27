@@ -65,7 +65,7 @@ import {
   startSelection,
   updateSelection,
 } from './selection.js';
-import { SYNC_OUTPUT_SUPPORTED, isProgressReportingAvailable, supportsExtendedKeys, isLegacyWindowsConsole, type Terminal, writeDiffToTerminal } from './terminal.js';
+import { SYNC_OUTPUT_SUPPORTED, isProgressReportingAvailable, supportsExtendedKeys, type Terminal, writeDiffToTerminal } from './terminal.js';
 import {
   CURSOR_HOME,
   cursorMove,
@@ -764,11 +764,6 @@ export default class Ink {
         // positioning can drift from Ink's virtual model, same as ConEmu.
         // Erase before every alt-screen frame to prevent accumulation.
         optimized.unshift(ERASE_THEN_HOME_PATCH);
-      } else if (isLegacyWindowsConsole()) {
-        // Legacy Windows console (Windows 7, old conhost): cursor positioning
-        // and diff-based rendering can cause content duplication and stacking.
-        // Always erase and do a full repaint to prevent accumulation.
-        optimized.unshift(ERASE_THEN_HOME_PATCH);
       } else {
         optimized.unshift(CURSOR_HOME_PATCH);
       }
@@ -852,7 +847,7 @@ export default class Ink {
     // are only ever true in alt-screen; in main-screen this is false→false.
     // On legacy Windows consoles (Windows 7, cmder), always force full
     // redraw to prevent content duplication and text stacking issues.
-    this.prevFrameContaminated = selActive || hlActive || isLegacyWindowsConsole();
+    this.prevFrameContaminated = selActive || hlActive;
 
     // A ScrollBox has pendingScrollDelta left to drain — schedule the next
     // frame. MUST NOT call this.scheduleRender() here: we're inside a
