@@ -29,6 +29,7 @@ import {
   writeFile,
 } from 'fs/promises'
 import { homedir } from 'os'
+import { getClaudeConfigHomeDir } from '../envUtils.js'
 import { basename, delimiter, dirname, join, resolve } from 'path'
 import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -1686,7 +1687,7 @@ export async function cleanupNpmInstallations(): Promise<{
   }
 
   // Check for local installation at ~/.claude/local
-  const localInstallDir = join(homedir(), '.claude', 'local')
+  const localInstallDir = join(getClaudeConfigHomeDir(), 'local')
 
   try {
     await rm(localInstallDir, { recursive: true })

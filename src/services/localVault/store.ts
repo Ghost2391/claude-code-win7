@@ -36,8 +36,8 @@ import {
   rmSync,
 } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 import { logError } from '../../utils/log.js'
 import { KeychainUnavailableError, tryKeychain } from './keychain.js'
 
@@ -83,7 +83,7 @@ export class LocalVaultValueTooLargeError extends Error {
 // ── Path helpers ──────────────────────────────────────────────────────────────
 
 function getClaudeDir(): string {
-  return process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude')
+  return getClaudeConfigHomeDir()
 }
 
 function getVaultFilePath(): string {

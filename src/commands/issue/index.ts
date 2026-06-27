@@ -5,9 +5,9 @@ import {
   readFileSync,
   writeFileSync,
 } from 'node:fs'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Command, LocalCommandResult } from '../../types/command.js'
+import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
   logEvent,
@@ -17,7 +17,6 @@ import {
   getSessionProjectDir,
   getOriginalCwd,
 } from '../../bootstrap/state.js'
-import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 import { sanitizePath } from '../../utils/path.js'
 
 import * as childProcess from 'node:child_process'
@@ -363,7 +362,7 @@ const issue: Command = {
             fullBodyText.slice(0, MAX_URL_BODY) +
             '\n\n... (truncated, see CLI for full body)'
           try {
-            const draftsDir = join(homedir(), '.claude', 'issue-drafts')
+            const draftsDir = join(getClaudeConfigHomeDir(), 'issue-drafts')
             mkdirSync(draftsDir, { recursive: true })
             const stamp = new Date().toISOString().replace(/[:.]/g, '-')
             draftPath = join(draftsDir, `issue-${stamp}.md`)
