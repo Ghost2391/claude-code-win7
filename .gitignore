@@ -2,127 +2,36 @@
 # Dependencies
 node_modules/
 
-# Build artifacts
+# Build outputs
 dist/
 build/
-target/
+*.js.map
+*.tsbuildinfo
 
-# Logs
-*.log
-
-# Environment
+# Environment variables
 .env
 .env.local
 *.env.*
 
-# Editors
+# Logs
+*.log
+
+# Coverage reports
+coverage/
+.nyc_output/
+.jest/
+
+# IDE specific
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-venv/
-.venv/
-.env
-
-# Node.js
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# OS generated files
+# OS generated
 .DS_Store
 Thumbs.db
-
-# Coverage
-coverage/
-htmlcov/
-.coverage
 
 # Temporary files
 *.tmp
 *.temp
-*.bak
-*.swp
-*.swo
-
-# Compressed files
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
-
-# Java
-*.class
-*.jar
-*.war
-*.ear
-*.nar
-*.so
-
-# C/C++
-*.o
-*.a
-*.obj
-*.out
-*.exe
-*.dll
-*.so
-*.dylib
-
-# Go
-*.exe
-*.test
-*.prof
-
-# Ruby
-*.gem
-*.rbc
-*.sass-cache
-
-# Rust
-*.so
-*.dylib
-*.dSYM
-
-# Gradle
-.gradle/
-build/
-
-# MyPy
-.mypy_cache/
-
-# PyTest
-.pytest_cache/
-
-# Jupyter
-.ipynb_checkpoints/
-
-# Julia
-julia-*/
-
-# Zig
-zig*/
 ```

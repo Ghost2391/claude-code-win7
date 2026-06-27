@@ -350,7 +350,13 @@ export class LogUpdate {
         return true // early exit
       }
 
-      moveCursorTo(screen, x, y)
+      // Legacy Windows console: always use absolute cursor positioning
+      // to prevent drift and content duplication
+      if (process.platform === 'win32' && !process.env.WT_SESSION) {
+        moveCursorTo(screen, x, y, true)
+      } else {
+        moveCursorTo(screen, x, y)
+      }
 
       if (added) {
         const targetHyperlink = added.hyperlink
@@ -579,7 +585,13 @@ function renderFrameSlice(
         continue
       }
 
-      moveCursorTo(screen, x, y)
+      // Legacy Windows console: always use absolute cursor positioning
+      // to prevent drift and content duplication
+      if (process.platform === 'win32' && !process.env.WT_SESSION) {
+        moveCursorTo(screen, x, y, true)
+      } else {
+        moveCursorTo(screen, x, y)
+      }
 
       // Handle hyperlink
       const targetHyperlink = cell.hyperlink
@@ -692,17 +704,22 @@ function writeCellWithStyleStr(
   return true
 }
 
-function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number) {
+function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number, forceAbsolute = false) {
   screen.txn(prev => {
     const dx = targetX - prev.x
     const dy = targetY - prev.y
     const inPendingWrap = prev.x >= screen.viewportWidth
 
+    // Legacy Windows console (Windows 7, cmder): always use absolute cursor
+    // positioning to prevent drift and content duplication issues
+    const isLegacyWin32 = process.platform === 'win32' && !process.env.WT_SESSION
+    const useAbsolute = forceAbsolute || isLegacyWin32
+
     // If we're in pending wrap state (cursor.x >= width), use CR
     // to reset to column 0 on the current line without advancing
     // to the next line, then issue the cursor movement.
     if (inPendingWrap) {
-      if (process.platform === 'win32') {
+      if (useAbsolute) {
         return [
           [{ type: 'stdout', content: cursorPosition(targetY + 1, targetX + 1) }],
           { dx, dy },
@@ -717,10 +734,10 @@ function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number) {
     // When moving to a different line, use carriage return (\r) to reset to
     // column 0 first, then cursor move.
     if (dy !== 0) {
-      if (process.platform === 'win32') {
-        // Windows console (cmd, PowerShell): CSI A/B (cursor up/down)
-        // can drift when near viewport boundaries, causing content to
-        // stack on each redraw. Use absolute CUP to avoid drift.
+      if (useAbsolute) {
+        // Windows console (cmd, PowerShell) and legacy terminals: CSI A/B
+        // (cursor up/down) can drift when near viewport boundaries, causing
+        // content to stack on each redraw. Use absolute CUP to avoid drift.
         return [
           [{ type: 'stdout', content: cursorPosition(targetY + 1, targetX + 1) }],
           { dx, dy },
@@ -732,7 +749,13 @@ function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number) {
       ]
     }
 
-    // Standard same-line cursor move
+    // Standard same-line cursor move - but use absolute for legacy Windows
+    if (useAbsolute) {
+      return [
+        [{ type: 'stdout', content: cursorPosition(targetY + 1, targetX + 1) }],
+        { dx, dy },
+      ]
+    }
     return [[{ type: 'cursorMove', x: dx, y: dy }], { dx, dy }]
   })
 }

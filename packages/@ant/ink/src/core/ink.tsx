@@ -764,6 +764,11 @@ export default class Ink {
         // positioning can drift from Ink's virtual model, same as ConEmu.
         // Erase before every alt-screen frame to prevent accumulation.
         optimized.unshift(ERASE_THEN_HOME_PATCH);
+      } else if (isLegacyWindowsConsole()) {
+        // Legacy Windows console (Windows 7, old conhost): cursor positioning
+        // and diff-based rendering can cause content duplication and stacking.
+        // Always erase and do a full repaint to prevent accumulation.
+        optimized.unshift(ERASE_THEN_HOME_PATCH);
       } else {
         optimized.unshift(CURSOR_HOME_PATCH);
       }
