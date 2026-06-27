@@ -77,13 +77,90 @@ bun run docs:dev
 ### Runtime & Build
 
 - **Runtime**: Bun (not Node.js). All imports, builds, and execution use Bun APIs.
-- **Build**: `build.ts` 执行 `Bun.build()` with `splitting: true`，入口 `src/entrypoints/cli.tsx`，输出 `dist/cli.js` + chunk files。Build 默认启用 19 个 feature（见下方 Feature Flag 段）。构建后自动替换 `import.meta.require` 为 Node.js 兼容版本（产物 bun/node 都可运行）。构建时会将 `vendor/audio-capture/` 和 `src/utils/vendor/ripgrep/` 复制到 `dist/vendor/` 下。
-- **Build (Vite)**: `vite.config.ts` + `scripts/post-build.ts`，代码分割模式，chunk 输出到 `dist/chunks/`。post-build 遍历 `dist/` 和 `dist/chunks/` 下所有 `.js` 文件做 `globalThis.Bun` 解构 patch，复制 vendor 文件到 `dist/vendor/`。
-- **Vendor 路径解析**: 构建后 chunk 文件位于 `dist/` 或 `dist/chunks/` 下，vendor 二进制在 `dist/vendor/`。`src/utils/distRoot.ts` 提供共享的 `distRoot` 函数，通过 `import.meta.url` 路径中 `lastIndexOf('dist')` 或 `lastIndexOf('src')` 定位根目录。`ripgrep.ts`、`computerUse/setup.ts`、`claudeInChrome/setup.ts`、`updateCCB.ts` 均使用 `distRoot` 而非内联 `import.meta.url` 路径推算。`packages/audio-capture-napi/src/index.ts` 有独立的 `lastIndexOf('dist')` 逻辑，功能等价。
-- **为什么 Vite 必须代码分割**: Bun/JSC 会全量解析单个大 JS 文件的 bytecode 和 JIT，单文件 17MB 产物导致 RSS 暴涨至 ~1GB（Node/V8 懒解析仅需 ~220MB）。代码分割为 600+ 小 chunk 后 Bun 按需加载，`--version` RSS 从 966MB 降至 35MB，完整加载从 1GB+ 降至 ~500MB。
-- **Dev mode**: `scripts/dev.ts` 通过 Bun `-d` flag 注入 `MACRO.*` defines，运行 `src/entrypoints/cli.tsx`。默认启用全部 feature。
 - **Module system**: ESM (`"type": "module"`), TSX with `react-jsx` transform.
 - **Monorepo**: Bun workspaces — 17 个 workspace packages + 若干辅助目录 in `packages/` resolved via `workspace:*`。
+
+### 🛠 Build Guide（构建指南 — AI 必读）
+
+#### 两个构建方式
+
+| 方式 | 命令 | 产物 | 用途 |
+|------|------|------|------|
+| Bun build | `bun run build` | `dist/cli.js` + chunk files | Bun 运行时 |
+| **Vite build（推荐）** | `bun run build:vite` | `dist/cli.js` + `dist/chunks/*.js` + `dist/claude.bat` | **Win7 / Node.js 18 部署** |
+
+**Win7 部署必须用 Vite build**，因为产物要在 Node.js 18 上运行。
+
+#### Vite 构建详细流程
+
+```
+bun run build:vite
+```
+
+等价于两步：
+
+```bash
+vite build                          # 1. Vite/Rolldown 打包
+bun run scripts/post-build.ts       # 2. 后处理（关键！）
+```
+
+**post-build 做了这些事**（缺少任何一步都会导致运行失败）：
+
+1. **Patch `globalThis.Bun` 解构** — 遍历 `dist/*.js` 和 `dist/chunks/*.js`，把 `var {x} = globalThis.Bun` 替换为安全检查版本（Node.js 没有 `globalThis.Bun`）
+2. **Patch `nodeImports`** — 修复 `Object.assign(nodeImports,...` 引用，补充 `globalThis.nodeImports` 兜底
+3. **修复 `node:stream` 导出** — Node 18 的 `node:stream` 缺少 `on`/`finished` 导出，用 `cn` (events.on) 和 `zzzFn` (新导入) 替代
+4. **生成 `claude.bat`** — Windows 批处理入口，设置 `TERM=xterm-256color`，调用同级 `node-v18.20.8-win-x64/node.exe` 运行 `cli.js`
+5. **生成 `cli-bun.js` / `cli-node.js`** — shebang 入口
+6. **生成 `dist/package.json`** — `{ "type": "module" }` 声明 ESM
+7. **复制 vendor 文件** — `vendor/audio-capture/` → `dist/vendor/audio-capture/`，`src/utils/vendor/ripgrep/` → `dist/vendor/ripgrep/`
+
+#### Node 18 兼容性补充脚本
+
+Vite 构建后**必须**再跑一次 Node 18 兼容补丁：
+
+```bash
+node scripts/patch-node16.cjs
+```
+
+这个脚本做两件事：
+- **RegExp `v` flag → `u` flag**：Node 18 不支持 ES2024 的 `v` flag，替换为 `u`
+- **`stream.on` fix 验证**：确认 post-build 的修复没有遗漏
+
+#### ❌ 常见构建错误（其他 AI 常犯）
+
+1. **丢 `claude.bat`**：只跑了 `vite build` 没跑 `scripts/post-build.ts` → 用 `bun run build:vite` 而不是 `bun run build:vite:only`
+2. **打出带 `.map` 的大包**：`vite.config.ts` 已配置 `sourcemap: false` + `minify: true`，不需要额外参数
+3. **缺少 model/provider**：模型和 provider 模块由 `packages/@ant/model-provider/` 提供，是 workspace 依赖，构建时自动打包
+4. **单文件超大包（~17MB）**：不要关闭代码分割（`manualChunks` 在 `vite.config.ts` 中配置）。单文件模式仅用于 Bun build
+5. **Node 18 启动报 `Invalid flags...RegExp...'v'`**：忘了跑 `node scripts/patch-node16.cjs`
+6. **`process.stdout.isTTY` 异常**：Windows 终端必须设置 `TERM=xterm-256color`，已在 `claude.bat` 中处理
+
+#### 正确构建命令（完整）
+
+```bash
+bun run build:vite && node scripts/patch-node16.cjs
+```
+
+产物结构：
+```
+dist/
+├── cli.js                # 主入口
+├── cli-node.js           # Node shebang 入口
+├── cli-bun.js            # Bun shebang 入口
+├── claude.bat            # Windows 批处理
+├── package.json          # ESM 声明
+├── chunks/               # 代码分割 chunk（~600 个）
+│   ├── shared-state-*.js
+│   ├── vendor-*.js
+│   └── ...
+└── vendor/
+    ├── audio-capture/
+    └── ripgrep/
+```
+
+- **为什么 Vite 必须代码分割**: Bun/JSC 会全量解析单个大 JS 文件的 bytecode 和 JIT，单文件 17MB 产物导致 RSS 暴涨至 ~1GB（Node/V8 懒解析仅需 ~220MB）。代码分割为 600+ 小 chunk 后 Bun 按需加载，`--version` RSS 从 966MB 降至 35MB，完整加载从 1GB+ 降至 ~500MB。
+- **Vendor 路径解析**: 构建后 chunk 文件位于 `dist/` 或 `dist/chunks/` 下，vendor 二进制在 `dist/vendor/`。`src/utils/distRoot.ts` 提供共享的 `distRoot` 函数，通过 `import.meta.url` 路径中 `lastIndexOf('dist')` 或 `lastIndexOf('src')` 定位根目录。`ripgrep.ts`、`computerUse/setup.ts`、`claudeInChrome/setup.ts`、`updateCCB.ts` 均使用 `distRoot` 而非内联 `import.meta.url` 路径推算。`packages/audio-capture-napi/src/index.ts` 有独立的 `lastIndexOf('dist')` 逻辑，功能等价。
+- **Dev mode**: `scripts/dev.ts` 通过 Bun `-d` flag 注入 `MACRO.*` defines，运行 `src/entrypoints/cli.tsx`。默认启用全部 feature。
 - **Lint/Format**: Biome (`biome.json`)。覆盖 `src/`、`scripts/`、`packages/` 全项目（含 `packages/@ant/`）。`bun run lint` / `bun run lint:fix` / `bun run format` / `bun run check` / `bun run check:fix`。42 条规则因 decompiled 代码被关闭，仅保留 `recommended` 基线。
 - **Pre-commit**: husky + lint-staged。提交时自动对暂存文件执行 `biome check --fix`（TS/JS）和 `biome format --write`（JSON）。
 - **CI Lint**: `ci.yml` 在依赖安装后、类型检查前执行 `bunx biome ci .`，lint 或格式化不达标则 CI 失败。
