@@ -65,7 +65,14 @@ import {
   startSelection,
   updateSelection,
 } from './selection.js';
-import { SYNC_OUTPUT_SUPPORTED, isProgressReportingAvailable, supportsExtendedKeys, type Terminal, writeDiffToTerminal } from './terminal.js';
+import {
+  SYNC_OUTPUT_SUPPORTED,
+  isLegacyWindowsConsole,
+  isProgressReportingAvailable,
+  supportsExtendedKeys,
+  type Terminal,
+  writeDiffToTerminal,
+} from './terminal.js';
 import {
   CURSOR_HOME,
   cursorMove,
@@ -728,7 +735,7 @@ export default class Ink {
     // to clear the terminal before the diff. Alt-screen has its own CSI H
     // anchor + cursor park below. BSU/ESU wraps erase+paint atomically on
     // supported terminals (main-screen always uses sync markers).
-    if (this.altScreenActive && hasDiff) {
+    if ((this.altScreenActive || isLegacyWindowsConsole()) && hasDiff) {
       // Prepend CSI H to anchor the physical cursor to (0,0) so
       // log-update's relative moves compute from a known spot (self-healing
       // against out-of-band cursor drift, see the ALT_SCREEN_ANCHOR_CURSOR
@@ -751,6 +758,14 @@ export default class Ink {
       if (this.needsEraseBeforePaint) {
         this.needsEraseBeforePaint = false;
         optimized.unshift(ERASE_THEN_HOME_PATCH);
+      } else if (isLegacyWindowsConsole()) {
+        // Legacy Windows main screen (no DEC 1049): just anchor cursor to
+        // (0,0) so every frame starts from the top-left. Without this, the
+        // cursor drifts downward as each frame appends content below the
+        // previous one. Do NOT erase — \x1b[2J scrolls on main screen,
+        // and ERASE_BELOW would flash. The diff (with absolute CUP from
+        // log-update) overwrites changed cells in-place.
+        optimized.unshift(CURSOR_HOME_PATCH);
       } else if (process.env.ConEmuANSI || process.env.ConEmuPID) {
         // ConEmu/Cmder: cursor positioning (CSI A/B/C/D) can drift from
         // Ink's virtual model, causing content to stack on each redraw.
@@ -767,7 +782,9 @@ export default class Ink {
       } else {
         optimized.unshift(CURSOR_HOME_PATCH);
       }
-      optimized.push(this.altScreenParkPatch);
+      if (this.altScreenActive) {
+        optimized.push(this.altScreenParkPatch);
+      }
     }
 
     // Native cursor positioning: park the terminal cursor at the declared
