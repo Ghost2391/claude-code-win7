@@ -28,6 +28,7 @@ import {
   RESET_SCROLL_REGION,
   setScrollRegion,
 } from './termio/csi.js'
+import { isLegacyWindowsConsole } from './terminal.js'
 import { LINK_END, link as oscLink } from './termio/osc.js'
 
 type State = {
@@ -352,8 +353,8 @@ export class LogUpdate {
 
       // Legacy Windows console: always use absolute cursor positioning
       // to prevent drift and content duplication
-      if (process.platform === 'win32' && !process.env.WT_SESSION) {
-        moveCursorTo(screen, x, y, true)
+      if (isLegacyWindowsConsole()) {
+        moveCursorTo(screen, x, y)
       } else {
         moveCursorTo(screen, x, y)
       }
@@ -587,8 +588,8 @@ function renderFrameSlice(
 
       // Legacy Windows console: always use absolute cursor positioning
       // to prevent drift and content duplication
-      if (process.platform === 'win32' && !process.env.WT_SESSION) {
-        moveCursorTo(screen, x, y, true)
+      if (isLegacyWindowsConsole()) {
+        moveCursorTo(screen, x, y)
       } else {
         moveCursorTo(screen, x, y)
       }
