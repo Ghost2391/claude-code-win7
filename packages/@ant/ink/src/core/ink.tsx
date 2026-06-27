@@ -658,7 +658,8 @@ export default class Ink {
     // cells at sibling boundaries that per-node damage tracking misses.
     // Selection/highlight overlays write via setCellStyleId which doesn't
     // track damage. prevFrameContaminated covers the cleanup frame.
-    if (didLayoutShift() || selActive || hlActive || this.prevFrameContaminated) {
+    const layoutShift = didLayoutShift();
+    if (layoutShift || selActive || hlActive || this.prevFrameContaminated) {
       frame.screen.damage = {
         x: 0,
         y: 0,
@@ -759,13 +760,18 @@ export default class Ink {
         this.needsEraseBeforePaint = false;
         optimized.unshift(ERASE_THEN_HOME_PATCH);
       } else if (isLegacyWindowsConsole()) {
-        // Legacy Windows main screen (no DEC 1049): just anchor cursor to
-        // (0,0) so every frame starts from the top-left. Without this, the
-        // cursor drifts downward as each frame appends content below the
-        // previous one. Do NOT erase — \x1b[2J scrolls on main screen,
-        // and ERASE_BELOW would flash. The diff (with absolute CUP from
-        // log-update) overwrites changed cells in-place.
-        optimized.unshift(CURSOR_HOME_PATCH);
+        // Legacy Windows main screen (no DEC 1049): always anchor cursor
+        // to (0,0) so every frame starts from the top-left. On layout-shift
+        // frames (view transitions like opening /plugin or ESC to dismiss),
+        // also erase the screen to clear old content. ERASE_SCREEN (\x1b[2J)
+        // scrolls old content into scrollback on the main screen, but since
+        // layout shifts are rare (~1-2 per user action), the accumulation
+        // is negligible.
+        if (layoutShift) {
+          optimized.unshift(ERASE_THEN_HOME_PATCH);
+        } else {
+          optimized.unshift(CURSOR_HOME_PATCH);
+        }
       } else if (process.env.ConEmuANSI || process.env.ConEmuPID) {
         // ConEmu/Cmder: cursor positioning (CSI A/B/C/D) can drift from
         // Ink's virtual model, causing content to stack on each redraw.
