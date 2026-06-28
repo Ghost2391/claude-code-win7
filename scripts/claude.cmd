@@ -9,7 +9,12 @@ rem in the claude installation directory, not in C:\Users.
 rem ============================================================
 
 set "SCRIPT_DIR=%~dp0"
-set "PROJECT_ROOT=%SCRIPT_DIR%.."
+
+rem Resolve PROJECT_ROOT to a DRIVE-LETTERED absolute path.
+rem "%~dp0.." is a string — for %%I expands %%~fI to the real
+rem absolute path (e.g. E:\dist\.. → E:\), without relying on
+rem pushd, %CD%, or MSYS2 path translation.
+for %%I in ("%SCRIPT_DIR%..") do set "PROJECT_ROOT=%%~fI"
 
 rem Allow override via CLAUDE_CODE_NODE_PATH environment variable
 if not defined CLAUDE_CODE_NODE_PATH (
@@ -23,6 +28,7 @@ if not exist "%CLAUDE_CODE_NODE_PATH%" (
     echo Please either:
     echo   1. Set CLAUDE_CODE_NODE_PATH environment variable to your node.exe
     echo   2. Place portable Node.js v18.20.8 at the expected path
+    echo   3. Expected location: %PROJECT_ROOT%\node-v18.20.8-win-x64\node.exe
     echo.
     pause
     exit /b 1
@@ -31,11 +37,9 @@ if not exist "%CLAUDE_CODE_NODE_PATH%" (
 rem Store all config in claude installation directory (not C:\Users)
 rem Cloud desktop environments may wipe C:\Users on reboot
 if not defined CLAUDE_CONFIG_DIR (
-    rem Resolve PROJECT_ROOT to an absolute path (%~dp0.. → drive:\parent)
-    for %%I in ("%SCRIPT_DIR%..") do set "PROJECT_ROOT_ABS=%%~fI"
     rem Auto-create .claude config directory if it doesn't exist
-    if not exist "%PROJECT_ROOT_ABS%\.claude" mkdir "%PROJECT_ROOT_ABS%\.claude" 2>nul
-    set "CLAUDE_CONFIG_DIR=%PROJECT_ROOT_ABS%\.claude"
+    if not exist "%PROJECT_ROOT%\.claude" mkdir "%PROJECT_ROOT%\.claude" 2>nul
+    set "CLAUDE_CONFIG_DIR=%PROJECT_ROOT%\.claude"
 )
 
 rem Set Windows 7 compatible Node.js options
