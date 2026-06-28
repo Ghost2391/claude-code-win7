@@ -3,6 +3,7 @@
  * Detects modern terminals that support ESC[3J for clearing scrollback.
  */
 
+import { release as osRelease } from 'os'
 import {
   CURSOR_HOME,
   csi,
@@ -12,6 +13,15 @@ import {
 
 // HVP (Horizontal Vertical Position) - legacy Windows cursor home
 const CURSOR_HOME_WINDOWS = csi(0, 'f')
+
+/**
+ * Windows 7 / Server 2008 R2 (NT 6.1). Its console (conhost) has no native
+ * VT processing, so Node/libuv emulates a subset of ANSI and silently drops
+ * the alternate-screen switch (ESC[?1049h) and scrollback clear (ESC[3J).
+ * Computed once — the OS version can't change mid-process.
+ */
+export const IS_WINDOWS7 =
+  process.platform === 'win32' && osRelease().startsWith('6.1')
 
 function isWindowsTerminal(): boolean {
   return process.platform === 'win32' && !!process.env.WT_SESSION
