@@ -31,15 +31,11 @@ if not exist "%CLAUDE_CODE_NODE_PATH%" (
 rem Store all config in claude installation directory (not C:\Users)
 rem Cloud desktop environments may wipe C:\Users on reboot
 if not defined CLAUDE_CONFIG_DIR (
-    rem Get absolute path of PROJECT_ROOT
-    pushd "%PROJECT_ROOT%"
-    set "CLAUDE_CONFIG_DIR=%CD%\.claude"
-    popd
-)
-
-rem Auto-create .claude config directory if it doesn't exist
-if not exist "%CLAUDE_CONFIG_DIR%" (
-    mkdir "%CLAUDE_CONFIG_DIR%" 2>nul
+    rem Resolve PROJECT_ROOT to an absolute path (%~dp0.. → drive:\parent)
+    for %%I in ("%SCRIPT_DIR%..") do set "PROJECT_ROOT_ABS=%%~fI"
+    rem Auto-create .claude config directory if it doesn't exist
+    if not exist "%PROJECT_ROOT_ABS%\.claude" mkdir "%PROJECT_ROOT_ABS%\.claude" 2>nul
+    set "CLAUDE_CONFIG_DIR=%PROJECT_ROOT_ABS%\.claude"
 )
 
 rem Set Windows 7 compatible Node.js options
