@@ -45,6 +45,9 @@
     "build:vite": "vite build && bun run scripts/post-build.ts",
     "build:vite:only": "vite build",
     "build:bun": "bun run build.ts",
+    "build:win7": "bun run build:vite",
+    "run:win7": "dist\\claude.cmd",
+    "postbuild:win7": "bun run scripts/post-build.ts",
     "dev": "bun run scripts/dev.ts",
     "dev:inspect": "bun run scripts/dev-debug.ts",
     "prepublishOnly": "bun run build:vite",
@@ -220,7 +223,8 @@
     "follow-redirects": "1.16.0",
     "hono": "4.12.15",
     "postcss": "8.5.10",
-    "uuid": "14.0.0"
+    "uuid": "14.0.0",
+    "string-width": "7.2.0"
   },
   "lint-staged": {
     "*.{ts,tsx,js,mjs,jsx}": [

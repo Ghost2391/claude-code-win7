@@ -68,6 +68,10 @@ async function postBuild() {
   await cp('src/utils/vendor/ripgrep', ripgrepDir, { recursive: true } as never)
   console.log(`Copied src/utils/vendor/ripgrep/ → ${ripgrepDir}/`)
 
+  // Step 2.5: Copy Win7 launcher script
+  await cp('scripts/claude.cmd', join(outdir, 'claude.cmd'))
+  console.log(`Copied scripts/claude.cmd → ${outdir}/claude.cmd`)
+
   // Step 3: Generate dual entry points
   const cliBun = join(outdir, 'cli-bun.js')
   const cliNode = join(outdir, 'cli-node.js')
