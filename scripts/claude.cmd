@@ -15,9 +15,9 @@ for %%I in ("%~dp0..") do set "PROJECT_ROOT=%%~fI"
 set "DEFAULT_NODE_PATH=%PROJECT_ROOT%\node-v18.20.8-win-x64\node.exe"
 set "DEFAULT_CONFIG_DIR=%PROJECT_ROOT%\.claude"
 
-rem Allow override via environment variables
-if not defined CLAUDE_CODE_NODE_PATH set "CLAUDE_CODE_NODE_PATH=%DEFAULT_NODE_PATH%"
-if not defined CLAUDE_CONFIG_DIR set "CLAUDE_CONFIG_DIR=%DEFAULT_CONFIG_DIR%"
+rem Use computed defaults; override any stale env-var values from prior runs.
+set "CLAUDE_CODE_NODE_PATH=%DEFAULT_NODE_PATH%"
+set "CLAUDE_CONFIG_DIR=%DEFAULT_CONFIG_DIR%"
 
 rem Check if portable Node.js exists
 if not exist "%CLAUDE_CODE_NODE_PATH%" goto :missing_node
