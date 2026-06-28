@@ -164,9 +164,16 @@ await writeFile(
 )
 console.log(`Generated ${outdir}/package.json`)
 
-// Step 7: Copy Win7 launcher script
-await cp('scripts/claude.cmd', join(outdir, 'claude.cmd'))
-console.log(`Copied scripts/claude.cmd → ${outdir}/claude.cmd`)
+// Step 7: Copy Win7 launcher script (convert LF→CRLF — cmd.exe can't parse
+// LF-only batch files, producing "'tlocal' is not recognized" etc.)
+{
+  const cmdContent = await readFile('scripts/claude.cmd', 'utf-8')
+  await writeFile(
+    join(outdir, 'claude.cmd'),
+    cmdContent.replace(/\r?\n/g, '\r\n'),
+  )
+  console.log(`Copied scripts/claude.cmd → ${outdir}/claude.cmd`)
+}
 
 // Step 8: Generate entry points
 const cliBun = join(outdir, 'cli-bun.js')
