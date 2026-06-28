@@ -335,3 +335,108 @@ for (const mod of vendoredModules) {
 ```
 
 这样 `dist/` 成为完全自包含的部署单元，无需依赖项目根目录的 `node_modules/`。
+
+---
+
+## 坑 11: Win7 旧控制台终端渲染异常（重复堆叠 / 串字 / 退出变色）
+
+### 现象
+
+Win7 上 Claude Code 发生三类终端渲染问题：
+
+1. **`/plugin` 切标签时欢迎横幅重复堆叠** —— 同一段内容连续出现 3~10 份，每次都多叠一层。
+2. **流式输出时画面串字交错** —— 正常聊天/打字时内容行和旧行的单元格交叠。
+3. **退出后终端字色变了** —— shell 提示符后续都是 dim/变色状态，需要手动 `cls` 才能恢复。
+
+在 ConEmu / PowerShell / cmd / Git Bash (via winpty) 中表现一致，**换终端无效**。
+
+### 原因
+
+Windows 7 的旧 **conhost 没有原生 VT/ANSI 支持**。Node.js 不依赖外部终端模拟器，而是通过 **libuv** (`uv_tty.c`) 将 ANSI 转义序列就地翻译成 Win32 Console API 调用。但 libuv 只实现了 ANSI 的一个**子集**：
+
+| 支持（可用） | **不支持（被丢弃）** |
+|---|---|
+| SGR 颜色 `ESC[…m` | **备用屏幕缓冲区** `ESC[?1049h`（alt-screen 切换） |
+| 光标移动 / 定位 `CSI n A/B/C/D/H` | **清滚动历史** `ESC[3J` |
+| 可视区清屏 `ESC[2J` | 鼠标跟踪 / 焦点事件 / bracketed-paste / 同步更新等 DEC 私有模式 |
+| 显示/隐藏光标 `ESC[?25h/l` | Kitty 键盘协议 `ESC[>1u` |
+
+这意味着：无论外层封装了哪个终端（ConEmu、PowerShell、cmd），**输出都要先经过 libuv 这一层**，alt-screen 序列在这步就被丢弃了，永远到不了实际渲染器。所以换终端无效。
+
+### 根因分析
+
+三个现象的根因各自不同但同源（libuv ANSI 支持不完整）：
+
+**重复堆叠**：非 fullscreen 模式下，整个 REPL 是"比窗口高的大帧"（欢迎横幅 + 历史消息 + 插件面板）。切标签触发 `fullResetSequence_CAUSES_FLICKER`（整帧重画），它调用 `getClearTerminalSequence()`。在 Win7 的"legacy Windows"分支中，该序列只发 `ESC[2J`（清可视区），**无法发 `ESC[3J`（清 scrollback 区）**。每次 full-reset 重画整帧时，旧横幅副本被推进 scrollback 又清不掉，随即新副本画进可视区 → 累计 3→10 份。`CLAUDE_CODE_NO_FLICKER=1`（强开 fullscreen）后**堆叠消失**（帧被约束在一屏高，无 scrollback 区）。
+
+**串字**：fullscreen 启用后，`ESC[?1049h`（切备用屏）被 libuv 丢弃，实际仍在**主屏**。而 alt-screen 渲染器用"增量 diff + **相对光标上移**"更新当前帧。相对光标上移在 conhost 触发 `hasCursorUpViewportYankBug`（代码里 win32 时直接返回 `true`，引用 microsoft/terminal#14774）→ 虚拟光标模型与物理屏错位 → 旧单元格没被覆盖 → 串字。
+
+**退出变色**：`gracefulShutdown.ts` 退出清理时发一批 DEC 私有模式重置序列 + `SHOW_CURSOR` + `chalk.dim(...)` 打印 resume 提示，但**没有保证发一个硬 SGR 复位 `ESC[0m`**。Win7 上 libuv 不可靠处理 chalk 的 `22m`(dim-off)，最后一次渲染留下的 dim/颜色属性泄漏给 shell。
+
+### 解决（commit `d871903e`）
+
+**文件**: `packages/@ant/ink/src/core/clearTerminal.ts` / `index.ts`、`src/utils/fullscreen.ts`、`packages/@ant/ink/src/core/log-update.ts`、`src/utils/gracefulShutdown.ts`
+
+分四步：
+
+#### 1. 新增 Win7 检测常量
+
+```ts
+// packages/@ant/ink/src/core/clearTerminal.ts
+export const IS_WINDOWS7 =
+  process.platform === 'win32' && osRelease().startsWith('6.1')
+```
+
+`os.release()` 返回 NT 版本号，Win7 = `6.1.x`。模块级（process lifetime 不变，只算一次，渲染热路径安全）。
+
+#### 2. Win7 默认开 fullscreen
+
+在 `src/utils/fullscreen.ts` 的 `isFullscreenEnvEnabled()` 末尾（`return process.env.USER_TYPE === 'ant'` 之前）插入：
+
+```ts
+if (IS_WINDOWS7) {
+  return true
+}
+```
+
+`CLAUDE_CODE_NO_FLICKER=0` 的处理在函数开头（opt-out 优先），不受影响。
+
+效果：Win7 上整个 REPL 被 `<AlternateScreen>` 包裹，树约束在 `<Box height={rows}>` 一屏高。帧永远不会超过窗口 → 没有 scrollback 区 → 旧帧不可能累积。**代价**：失去鼠标滚轮和终端原生滚动（键盘 PgUp/PgDn/Ctrl+Home/End 仍可滚），启动时清一次屏。
+
+#### 3. Win7 fullscreen 下改用逐行绝对定位重画
+
+在 `packages/@ant/ink/src/core/log-update.ts` 的 `render()` 开头（`isTTY` 判定之后）插入快速路径：
+
+```ts
+if (altScreen && IS_WINDOWS7) {
+  return this.renderWin7FullFrame(prev, next)
+}
+```
+
+新增方法 `renderWin7FullFrame(prev, next)` 的核心策略：
+
+- **绝对定位，非相对移动**：用 `CSI 行;1 H`（`cursorPosition`）逐行跳转到目标行、画完该行内容、用 `ESC[K`（`eraseToEndOfLine`）清行尾。从不用相对光标上移，从不发 LF（不会推进 scrollback）。
+- **仅重画变化的行**：复用引擎的 `diffEach(prev.screen, next.screen)` 找出变化的行号；未变化行跳过 → 空闲时发射零字节 → **零闪烁**；打字只重画输入行；流式只重画变化的消息行。
+- **尺寸变化时全屏重画**：`ESC[2J` + 逐行绝对重画（`resize` 场景）。
+- **与外部清理自然协作**：引擎的 `forceRedraw` / `enterAlternateScreen` / SIGCONT 会把 `prev` 帧重置为空白 → `diffEach` 发现所有行变化 → 自动全量重画，不会白屏。
+
+#### 4. 退出时硬复位
+
+在 `src/utils/gracefulShutdown.ts` 的 `cleanupTerminalModes()` 开头（`if isTTY` 之后、`try` 内）加：
+
+```ts
+writeSync(1, '\x1b[0m')  // 硬 SGR 复位，各平台均支持且无害
+```
+
+### 关键复用点
+
+- `fullResetSequence_CAUSES_FLICKER`（resize/offscreen 路径 + 流式整帧重画）—— `log-update.ts:504`，本次仅在 `renderWin7FullFrame` 尺寸变化时回退到它
+- `getClearTerminalSequence()` + 现有 Win 检测——`clearTerminal.ts`
+- `FlickerReason='clear'`——`frame.ts:36`
+- fullscreen gate + `<AlternateScreen>` 包裹——`fullscreen.ts` + `REPL.tsx:6676`
+
+### 取舍与后续
+
+- **闪烁可控**：逐行只重画变化行消除空闲闪烁；流式时只在变化行有轻微闪烁，实测可接受。若后续觉得重，可优化为逐行直接写入（省 `ESC[2J`）。
+- **鼠标滚轮失效**：Win7 fullscreen 禁用 SGR 鼠标跟踪（libuv 不支持），键盘 PgUp/PgDn/Ctrl+Home/End 仍可用。允许 `CLAUDE_CODE_NO_FLICKER=0` 退回 legacy 换取原生滚动。
+- **其他 Win 不受影响**：`IS_WINDOWS7` 限制 NT 6.1，Win8.1+/Win10/Win11 走原有路径。
