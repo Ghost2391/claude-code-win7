@@ -22,12 +22,15 @@ import {
 } from './screen.js'
 import {
   CURSOR_HOME,
+  cursorPosition,
   scrollDown as csiScrollDown,
   scrollUp as csiScrollUp,
+  eraseToEndOfLine,
   RESET_SCROLL_REGION,
   setScrollRegion,
 } from './termio/csi.js'
 import { LINK_END, link as oscLink } from './termio/osc.js'
+import { isLegacyWindowsConsole } from './clearTerminal.js'
 
 type State = {
   previousOutput: string
@@ -66,44 +69,10 @@ export class LogUpdate {
   private renderFullFrame(frame: Frame): Diff {
     const { screen } = frame
     const lines: string[] = []
-    let currentStyles: AnsiCode[] = []
-    let currentHyperlink: Hyperlink
     for (let y = 0; y < screen.height; y++) {
-      let line = ''
-      for (let x = 0; x < screen.width; x++) {
-        const cell = cellAt(screen, x, y)
-        if (cell && cell.width !== CellWidth.SpacerTail) {
-          // Handle hyperlink transitions
-          if (cell.hyperlink !== currentHyperlink) {
-            if (currentHyperlink !== undefined) {
-              line += LINK_END
-            }
-            if (cell.hyperlink !== undefined) {
-              line += oscLink(cell.hyperlink)
-            }
-            currentHyperlink = cell.hyperlink
-          }
-          const cellStyles = this.options.stylePool.get(cell.styleId)
-          const styleDiff = diffAnsiCodes(currentStyles, cellStyles)
-          if (styleDiff.length > 0) {
-            line += ansiCodesToString(styleDiff)
-            currentStyles = cellStyles
-          }
-          line += cell.char
-        }
-      }
-      // Close any open hyperlink before resetting styles
-      if (currentHyperlink !== undefined) {
-        line += LINK_END
-        currentHyperlink = undefined
-      }
-      // Reset styles at end of line so trimEnd doesn't leave dangling codes
-      const resetCodes = diffAnsiCodes(currentStyles, [])
-      if (resetCodes.length > 0) {
-        line += ansiCodesToString(resetCodes)
-        currentStyles = []
-      }
-      lines.push(line.trimEnd())
+      // trimEnd: non-TTY output has no ESC[K to clear the tail, so drop
+      // trailing spaces (buildStyledRow already reset styles at the end).
+      lines.push(buildStyledRow(screen, y, this.options.stylePool).trimEnd())
     }
 
     if (lines.length === 0) {
@@ -507,10 +476,132 @@ function fullResetSequence_CAUSES_FLICKER(
   stylePool: StylePool,
   debug?: { triggerY: number; prevLine: string; nextLine: string },
 ): Diff {
+  // Legacy Windows console (conhost): the normal path below emits a
+  // clearTerminal (ESC[2J — ESC[3J is dropped by libuv) then repaints the
+  // whole frame from (0,0). When the frame is taller than the viewport this
+  // scrolls, leaving the OLD frame's copy in an unclearable scrollback while a
+  // fresh copy is painted — frames stack (the duplicate-banner bug). Repaint
+  // only the visible viewport by ABSOLUTE position instead: no clear, no
+  // scroll, scrollback untouched. See legacyWindowsViewportRepaint.
+  if (isLegacyWindowsConsole()) {
+    return legacyWindowsViewportRepaint(frame, stylePool)
+  }
   // After clearTerminal, cursor is at (0, 0)
   const screen = new VirtualScreen({ x: 0, y: 0 }, frame.viewport.width)
   renderFrame(screen, frame, stylePool)
   return [{ type: 'clearTerminal', reason, debug }, ...screen.diff]
+}
+
+/**
+ * Build one screen row as a styled string WITHOUT cursor positioning or a
+ * trailing newline. Skips SpacerTail cells (the second column of a wide char —
+ * the wide char itself advances 2 columns). Closes any open hyperlink and
+ * resets SGR at the end so a following ESC[K / scroll doesn't inherit a color.
+ * Shared by renderFullFrame (non-TTY) and legacyWindowsViewportRepaint.
+ */
+function buildStyledRow(
+  screen: Screen,
+  y: number,
+  stylePool: StylePool,
+): string {
+  let line = ''
+  let currentStyles: AnsiCode[] = []
+  let currentHyperlink: Hyperlink
+  for (let x = 0; x < screen.width; x++) {
+    const cell = cellAt(screen, x, y)
+    if (cell && cell.width !== CellWidth.SpacerTail) {
+      if (cell.hyperlink !== currentHyperlink) {
+        if (currentHyperlink !== undefined) {
+          line += LINK_END
+        }
+        if (cell.hyperlink !== undefined) {
+          line += oscLink(cell.hyperlink)
+        }
+        currentHyperlink = cell.hyperlink
+      }
+      const cellStyles = stylePool.get(cell.styleId)
+      const styleDiff = diffAnsiCodes(currentStyles, cellStyles)
+      if (styleDiff.length > 0) {
+        line += ansiCodesToString(styleDiff)
+        currentStyles = cellStyles
+      }
+      line += cell.char
+    }
+  }
+  if (currentHyperlink !== undefined) {
+    line += LINK_END
+  }
+  const resetCodes = diffAnsiCodes(currentStyles, [])
+  if (resetCodes.length > 0) {
+    line += ansiCodesToString(resetCodes)
+  }
+  return line
+}
+
+/**
+ * Legacy Windows console repaint: redraw ONLY the visible viewport using
+ * absolute cursor positioning (CSI row;1 H), never scrolling and never
+ * touching scrollback. conhost (via libuv) drops ESC[3J, so the normal
+ * clear+repaint-whole-frame path stacks old copies; and it yanks the viewport
+ * on relative cursor-up into scrollback (hasCursorUpViewportYankBug), so the
+ * incremental relative-move path smears. Absolute positioning sidesteps both.
+ *
+ * The frame's bottom `viewport.height` rows map to physical rows 1..vh. Each
+ * row: CSI p;1 H + styled content + ESC[K (clears any longer prior content).
+ * Rows below the content (when the frame is shorter than the viewport) are
+ * blanked with ESC[K. Scrollback rows (above the viewport) are left as-is —
+ * they were painted correctly when they scrolled off and can't be reached.
+ *
+ * Repaints ALL visible rows (not just changed ones) — this path only runs on
+ * the infrequent full-reset (first overflow / resize / large shrink), so the
+ * cost is negligible and it avoids the "only repaint changed rows → lost
+ * output" failure mode of the reverted renderWin7FullFrame.
+ *
+ * Cursor end-state mirrors the normal full-reset (renderFrame ends below the
+ * last content row at column 0): when the logical cursor sits below a full
+ * viewport, park at the bottom and emit one LF so the next frame's
+ * cursorRestoreScroll accounting holds; otherwise park at the cursor's mapped
+ * visible row/column.
+ */
+// Exported for testing (the gate that reaches it, isLegacyWindowsConsole, is
+// platform-dependent; this lets tests exercise the repaint directly).
+export function legacyWindowsViewportRepaint(
+  frame: Frame,
+  stylePool: StylePool,
+): Diff {
+  const screen = frame.screen
+  const vh = frame.viewport.height
+  const sh = screen.height
+  if (vh <= 0) {
+    return []
+  }
+  // First screen row that is visible (top of the viewport). When the frame is
+  // taller than the viewport, the bottom vh rows are visible; otherwise all.
+  const topScreenY = Math.max(0, sh - vh)
+  let out = ''
+  for (let p = 1; p <= vh; p++) {
+    const screenY = topScreenY + (p - 1)
+    out += cursorPosition(p, 1)
+    if (screenY < sh) {
+      out += buildStyledRow(screen, screenY, stylePool)
+    }
+    out += eraseToEndOfLine()
+  }
+  // Park the physical cursor where the normal full-reset leaves it: screen
+  // coord (0, sh) — column 0, just past the last content row. renderFrame
+  // reaches that via a CR+LF after every row; we replicate the net end-state
+  // without the scrollback-stacking clear, so the engine and ink.tsx cursor
+  // parking (which already operate correctly from this state on the normal
+  // path) behave identically. ink.tsx then moves to the IME/input cursor.
+  const physBottomRow = sh - topScreenY + 1
+  if (physBottomRow > vh) {
+    // Content fills/overflows the viewport: park at the bottom row and scroll
+    // one fresh line (the net effect of renderFrame's trailing LF).
+    out += cursorPosition(vh, 1) + NEWLINE.content
+  } else {
+    out += cursorPosition(Math.max(physBottomRow, 1), 1)
+  }
+  return [{ type: 'stdout', content: out }]
 }
 
 function renderFrame(

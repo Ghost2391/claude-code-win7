@@ -53,6 +53,21 @@ function isModernWindowsTerminal(): boolean {
 }
 
 /**
+ * True on a legacy Windows console (conhost via Node/libuv) that lacks native
+ * VT: it silently drops the alt-screen switch (ESC[?1049h) and the scrollback
+ * clear (ESC[3J). This is the EXACT condition under which
+ * getClearTerminalSequence() falls into its legacy branch (ESC[2J only, no
+ * ESC[3J) — so a full-frame repaint can't wipe the scrollback copy and old
+ * frames stack. Modern Windows terminals (Windows Terminal / VS Code / mintty)
+ * are excluded because they handle ESC[3J and don't stack.
+ *
+ * Covers Win7 (NT 6.1) and any later Windows running in a non-modern console.
+ */
+export function isLegacyWindowsConsole(): boolean {
+  return process.platform === 'win32' && !isModernWindowsTerminal()
+}
+
+/**
  * Returns the ANSI escape sequence to clear the terminal including scrollback.
  * Automatically detects terminal capabilities.
  */
