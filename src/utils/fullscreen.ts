@@ -1,5 +1,4 @@
 import { spawnSync } from 'child_process'
-import { IS_WINDOWS7 } from '@anthropic/ink'
 import { getIsInteractive } from '../bootstrap/state.js'
 import { logForDebugging } from './debug.js'
 import { isEnvDefinedFalsy, isEnvTruthy } from './envUtils.js'
@@ -125,14 +124,6 @@ export function isFullscreenEnvEnabled(): boolean {
       )
     }
     return false
-  }
-  // Win7 legacy console: default fullscreen ON. The main-screen incremental
-  // renderer relies on alt-screen/scrollback sequences libuv drops on conhost,
-  // causing duplicate-frame stacking. Fullscreen constrains the tree to one
-  // viewport (no scrollback growth) and log-update.ts switches to a per-frame
-  // full repaint on Win7. Opt out via CLAUDE_CODE_NO_FLICKER=0 (handled above).
-  if (IS_WINDOWS7) {
-    return true
   }
   return process.env.USER_TYPE === 'ant'
 }

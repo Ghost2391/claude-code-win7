@@ -22,16 +22,12 @@ import {
 } from './screen.js'
 import {
   CURSOR_HOME,
-  cursorPosition,
-  ERASE_SCREEN,
-  eraseToEndOfLine,
   scrollDown as csiScrollDown,
   scrollUp as csiScrollUp,
   RESET_SCROLL_REGION,
   setScrollRegion,
 } from './termio/csi.js'
 import { LINK_END, link as oscLink } from './termio/osc.js'
-import { IS_WINDOWS7 } from './clearTerminal.js'
 
 type State = {
   previousOutput: string
@@ -116,97 +112,6 @@ export class LogUpdate {
     return [{ type: 'stdout', content: lines.join('\n') }]
   }
 
-  /** Build one screen row as a styled string (no positioning). */
-  private buildWin7Row(screen: Screen, y: number): string {
-    const stylePool = this.options.stylePool
-    let row = ''
-    let currentStyles: AnsiCode[] = []
-    let currentHyperlink: Hyperlink
-    for (let x = 0; x < screen.width; x++) {
-      const cell = cellAt(screen, x, y)
-      if (cell && cell.width !== CellWidth.SpacerTail) {
-        if (cell.hyperlink !== currentHyperlink) {
-          if (currentHyperlink !== undefined) {
-            row += LINK_END
-          }
-          if (cell.hyperlink !== undefined) {
-            row += oscLink(cell.hyperlink)
-          }
-          currentHyperlink = cell.hyperlink
-        }
-        const cellStyles = stylePool.get(cell.styleId)
-        const styleDiff = diffAnsiCodes(currentStyles, cellStyles)
-        if (styleDiff.length > 0) {
-          row += ansiCodesToString(styleDiff)
-          currentStyles = cellStyles
-        }
-        row += cell.char
-      }
-    }
-    // Close hyperlink + reset styles before the ESC[K tail-clear so the erased
-    // region doesn't inherit a background color.
-    if (currentHyperlink !== undefined) {
-      row += LINK_END
-    }
-    const resetCodes = diffAnsiCodes(currentStyles, [])
-    if (resetCodes.length > 0) {
-      row += ansiCodesToString(resetCodes)
-    }
-    return row
-  }
-
-  /**
-   * Win7 legacy-console repaint. conhost (via Node/libuv) silently drops the
-   * alt-buffer switch (ESC[?1049h), so the incremental diff's RELATIVE
-   * cursor-up moves hit conhost's cursor-into-scrollback bug and smear, while
-   * the main-screen full-reset path trails an LF past the last row that
-   * scrolls a copy into scrollback every frame (stacking).
-   *
-   * Instead, repaint each CHANGED row by ABSOLUTE position (CSI row;1 H — never
-   * scrolls, never moves up) and clear its tail with ESC[K. Change detection
-   * reuses the engine's prev frame via diffEach, so external clears
-   * (forceRedraw / alt-screen enter / resize / SIGCONT, which reset prev to
-   * blank) correctly force a full repaint, and an unchanged frame emits nothing
-   * (zero idle flicker). On a size change, ERASE_SCREEN first clears stale rows
-   * from the old geometry. Only used in fullscreen (frame == one viewport tall).
-   */
-  private renderWin7FullFrame(prev: Frame, next: Frame): Diff {
-    const ns = next.screen
-    const ps = prev.screen
-    const sizeChanged = ns.width !== ps.width || ns.height !== ps.height
-
-    let out = ''
-    if (sizeChanged) {
-      out += ERASE_SCREEN
-      for (let y = 0; y < ns.height; y++) {
-        out +=
-          cursorPosition(y + 1, 1) +
-          this.buildWin7Row(ns, y) +
-          eraseToEndOfLine()
-      }
-      return [{ type: 'stdout', content: out }]
-    }
-
-    // Same geometry: repaint only the rows that changed.
-    const changed = new Array<boolean>(ns.height).fill(false)
-    let any = false
-    diffEach(ps, ns, (_x, y) => {
-      changed[y] = true
-      any = true
-    })
-    if (!any) {
-      return []
-    }
-    for (let y = 0; y < ns.height; y++) {
-      if (!changed[y]) {
-        continue
-      }
-      out +=
-        cursorPosition(y + 1, 1) + this.buildWin7Row(ns, y) + eraseToEndOfLine()
-    }
-    return [{ type: 'stdout', content: out }]
-  }
-
   private getRenderOpsForDone(prev: Frame): Diff {
     this.state.previousOutput = ''
 
@@ -224,14 +129,6 @@ export class LogUpdate {
   ): Diff {
     if (!this.options.isTTY) {
       return this.renderFullFrame(next)
-    }
-
-    // Win7 legacy console: drop the relative-cursor incremental diff (it
-    // smears on conhost — see renderWin7FullFrame) for an absolute-position,
-    // changed-rows-only repaint. Only reachable in fullscreen (altScreen),
-    // where the frame is exactly one viewport tall.
-    if (altScreen && IS_WINDOWS7) {
-      return this.renderWin7FullFrame(prev, next)
     }
 
     const startTime = performance.now()

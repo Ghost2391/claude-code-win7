@@ -144,7 +144,6 @@ export {
   hasCursorUpViewportYankBug,
   writeDiffToTerminal,
 } from './core/terminal.js'
-export { IS_WINDOWS7 } from './core/clearTerminal.js'
 export {
   colorize,
   applyColor,

@@ -35,6 +35,9 @@ export function getPromptVariant(): PromptVariant {
 }
 
 export function shouldEnablePromptSuggestion(): boolean {
+  // Prompt suggestion disabled (Win7 port — extra API calls for marginal value)
+  return false
+
   // Env var overrides everything (for testing)
   const envOverride = process.env.CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION
   if (isEnvDefinedFalsy(envOverride)) {
