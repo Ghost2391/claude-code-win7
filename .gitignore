@@ -1,6 +1,8 @@
 node_modules
 .DS_Store
 dist
+dist.zip
+node-v18.20.8-win-x64/
 coverage
 .env
 *.log

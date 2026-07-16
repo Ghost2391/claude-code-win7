@@ -10,7 +10,9 @@
       "**",
       "!!**/dist",
       "!!**/.claude/workflows",
-      "!!**/*.workflow.mjs"
+      "!!**/*.workflow.mjs",
+      "!!src/entrypoints/web/public/*.min.js",
+      "!!src/entrypoints/web/public/*.min.css"
     ]
   },
   "formatter": {

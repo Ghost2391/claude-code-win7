@@ -523,3 +523,40 @@ function fullResetSequence_CAUSES_FLICKER(...): Diff {
 - **稳态零影响**：每帧增量相对光标移动完全不变（这条路径在 Win7 上已验证可用）。仅 full-reset 分叉。
 - **门控范围**：`isLegacyWindowsConsole()` 覆盖所有非 modern Windows 终端（不是仅 NT 6.1）。Windows Terminal / VS Code / mintty 完全不走此路径。
 - **已知遗留**：`/plugin` 切标签堆叠、中文输入过程中临时换行（回车即恢复）—— 均为 conhost 限制，暂不处理。
+
+---
+
+## 坑 12: Win7 conhost 渲染问题终极方案 — --web 模式
+
+### 现象
+尽管第二版修复了堆叠/串字/变色问题，Win7 的 legacy conhost 仍有已知遗留问题（切标签堆叠、中文输入换行）。且颜色/排版始终不如现代终端。
+
+### 解决
+新增 --web 模式：启动本地 HTTP/WebSocket 服务器，在浏览器中用 xterm.js 渲染终端，完全绕过 Win7 conhost。
+
+**工作原理**：
+
+浏览器 (xterm.js) ←→ WebSocket ←→ webServer.ts ←→ spawn ←→ CLI 子进程
+
+(CLAUDE_CODE_FORCE_INTERACTIVE=1, FORCE_COLOR=3, TERM_PROGRAM=xterm.js)
+
+**关键点**：
+- 不使用 node-pty（避免 Win7 原生编译问题），使用 child_process.spawn + 全 pipe stdio
+- CLAUDE_CODE_FORCE_INTERACTIVE=1 强制 stdout.isTTY = true，让 Ink 使用 TTY 模式渲染
+- 同时为 stdin 注入 setRawMode no-op，防止 pipe 上调用崩溃
+- FORCE_COLOR=3 强制 chalk 输出 truecolor
+- TERM_PROGRAM=xterm.js 让 Ink 检测为现代终端，不走 legacy Windows 渲染路径
+
+**新增文件**：
+- src/entrypoints/web/webServer.ts — HTTP/WS 服务器，静态文件服务 + 子进程桥接
+- src/entrypoints/web/public/ — index.html + xterm.min.js/css + fit addon + favicon（本地化，无 CDN）
+
+**修改文件**：
+- src/entrypoints/cli.tsx — --web 快速路径 + setRawMode 兼容
+- build.ts — 构建时复制 web 静态资源到 dist/web/public/
+- scripts/defines.ts — 禁用 AWAY_SUMMARY
+
+**用法**：
+- dist\claude.cmd --web
+- 环境变量：CLAUDE_WEB_PORT, CLAUDE_WEB_HOST
+- 打开浏览器访问 http://127.0.0.1:3000

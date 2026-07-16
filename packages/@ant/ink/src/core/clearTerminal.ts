@@ -49,6 +49,11 @@ function isModernWindowsTerminal(): boolean {
     return true
   }
 
+  // xterm.js (browser terminal via --web mode) is a fully capable terminal
+  if (process.env.TERM_PROGRAM === 'xterm.js') {
+    return true
+  }
+
   return false
 }
 

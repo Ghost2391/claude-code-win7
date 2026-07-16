@@ -157,14 +157,20 @@ const ripgrepDir = join(outdir, 'vendor', 'ripgrep')
 await cp('src/utils/vendor/ripgrep', ripgrepDir, { recursive: true })
 console.log(`Copied src/utils/vendor/ripgrep/ → ${ripgrepDir}/`)
 
-// Step 6: Generate dist/package.json (required for Node.js ESM resolution)
+// Step 7: Copy web static assets for --web mode
+const webPublicDir = join(outdir, 'web', 'public')
+await mkdir(webPublicDir, { recursive: true })
+await cp('src/entrypoints/web/public', webPublicDir, { recursive: true })
+console.log(`Copied src/entrypoints/web/public/ → ${webPublicDir}/`)
+
+// Step 8: Generate dist/package.json (required for Node.js ESM resolution)
 await writeFile(
   join(outdir, 'package.json'),
   JSON.stringify({ type: 'module' }, null, 2) + '\n',
 )
 console.log(`Generated ${outdir}/package.json`)
 
-// Step 7: Copy Win7 launcher script (convert LF→CRLF — cmd.exe can't parse
+// Step 9: Copy Win7 launcher script (convert LF→CRLF — cmd.exe can't parse
 // LF-only batch files, producing "'tlocal' is not recognized" etc.)
 {
   const cmdContent = await readFile('scripts/claude.cmd', 'utf-8')
@@ -175,7 +181,7 @@ console.log(`Generated ${outdir}/package.json`)
   console.log(`Copied scripts/claude.cmd → ${outdir}/claude.cmd`)
 }
 
-// Step 8: Generate entry points
+// Step 10: Generate entry points
 const cliBun = join(outdir, 'cli-bun.js')
 const cliNode = join(outdir, 'cli-node.js')
 

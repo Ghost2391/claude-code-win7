@@ -33,6 +33,11 @@ if (isEnvTruthy(process.env.CLAUDE_CODE_FORCE_INTERACTIVE)) {
       }
     }
   }
+  // Piped stdin lacks setRawMode; provide a no-op so TTY-dependent code paths
+  // (Ink raw mode, REPL input) don't throw when isTTY was forced true.
+  if (typeof process.stdin.setRawMode !== 'function') {
+    (process.stdin as any).setRawMode = () => process.stdin;
+  }
 }
 
 // Bugfix for corepack auto-pinning, which adds yarnpkg to peoples' package.jsons
@@ -341,6 +346,18 @@ async function main(): Promise<void> {
   // Redirect common update flag mistakes to the update subcommand
   if (args.length === 1 && (args[0] === '--update' || args[0] === '--upgrade')) {
     process.argv = [process.argv[0]!, process.argv[1]!, 'update'];
+  }
+
+  // Fast-path for --web: start a web-based terminal server
+  // Spawns the CLI as a child process and bridges IO via WebSocket + xterm.js
+  // to bypass Win7 console rendering issues.
+  if (args.includes('--web')) {
+    profileCheckpoint('cli_web_path');
+    const portIndex = args.indexOf('--port');
+    const port = portIndex !== -1 ? Number(args[portIndex + 1]) : undefined;
+    const { startWebServer } = await import('./web/webServer.js');
+    await startWebServer({ port, host: '127.0.0.1' });
+    return;
   }
 
   // --bare: set SIMPLE early so gates fire during module eval / commander

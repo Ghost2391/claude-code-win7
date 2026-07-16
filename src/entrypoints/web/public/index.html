@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Code - Web Terminal</title>
+<link rel="stylesheet" href="xterm.min.css">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; background: #1a1a1a; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+
+#header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 16px; background: #222; color: #ccc; font-size: 13px;
+  border-bottom: 1px solid #333; user-select: none; flex-shrink: 0;
+}
+#header .title { display: flex; align-items: center; gap: 8px; }
+#header .title svg { width: 18px; height: 18px; }
+#header .status { display: flex; align-items: center; gap: 6px; }
+#status-dot { width: 8px; height: 8px; border-radius: 50%; background: #f44336; display: inline-block; }
+#status-dot.connected { background: #4caf50; }
+#status-text { color: #999; }
+#status-text.connected { color: #4caf50; }
+
+#container { height: calc(100% - 38px); padding: 0; }
+#terminal-container { height: 100%; padding: 4px; }
+
+.xterm { height: 100%; }
+.xterm-viewport { scrollbar-width: thin; scrollbar-color: #444 transparent; }
+.xterm-viewport::-webkit-scrollbar { width: 6px; }
+.xterm-viewport::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+#reconnect-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+  align-items: center; justify-content: center; flex-direction: column; gap: 16px;
+  color: #fff; font-size: 16px; z-index: 100;
+}
+#reconnect-overlay.show { display: flex; }
+#reconnect-overlay button {
+  padding: 10px 24px; font-size: 14px; border: 1px solid #555;
+  background: #333; color: #fff; border-radius: 6px; cursor: pointer;
+}
+#reconnect-overlay button:hover { background: #444; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div class="title">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#D77757" stroke-width="2">
+      <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+      <path d="M2 17l10 5 10-5"/>
+      <path d="M2 12l10 5 10-5"/>
+    </svg>
+    <span>Claude Code</span>
+    <span style="color:#555;font-size:11px;">Web Terminal</span>
+  </div>
+  <div class="status">
+    <span id="status-dot"></span>
+    <span id="status-text">Disconnected</span>
+  </div>
+</div>
+
+<div id="container">
+  <div id="terminal-container"></div>
+</div>
+
+<div id="reconnect-overlay">
+  <div>Connection lost</div>
+  <button onclick="reconnect()">Reconnect</button>
+</div>
+
+<script src="xterm.min.js"></script>
+<script src="xterm-addon-fit.min.js"></script>
+<script>
+const statusDot = document.getElementById('status-dot');
+const statusText = document.getElementById('status-text');
+const reconnectOverlay = document.getElementById('reconnect-overlay');
+
+const term = new Terminal({
+  cursorBlink: true,
+  cursorStyle: 'bar',
+  fontSize: 14,
+  fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, 'Courier New', monospace",
+  lineHeight: 1.2,
+  allowTransparency: false,
+  theme: {
+    background: '#1a1a1a',
+    foreground: '#d4d4d4',
+    cursor: '#d4d4d4',
+    selectionBackground: '#264f78',
+    black: '#000000',
+    red: '#f44336',
+    green: '#4caf50',
+    yellow: '#ffeb3b',
+    blue: '#2196f3',
+    magenta: '#e040fb',
+    cyan: '#00bcd4',
+    white: '#d4d4d4',
+    brightBlack: '#666666',
+    brightRed: '#ff6659',
+    brightGreen: '#69f0ae',
+    brightYellow: '#fff59d',
+    brightBlue: '#64b5f6',
+    brightMagenta: '#ea80fc',
+    brightCyan: '#4dd0e1',
+    brightWhite: '#ffffff',
+  },
+  cols: 120,
+  rows: 40,
+});
+
+const fitAddon = new FitAddon.FitAddon();
+term.loadAddon(fitAddon);
+term.open(document.getElementById('terminal-container'));
+
+let socket = null;
+let reconnectTimer = null;
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = proto + '//' + location.host;
+
+  statusDot.className = '';
+  statusText.textContent = 'Connecting...';
+  statusText.className = '';
+  reconnectOverlay.classList.remove('show');
+
+  socket = new WebSocket(url);
+
+  socket.onopen = () => {
+    statusDot.className = 'connected';
+    statusText.textContent = 'Connected';
+    statusText.className = 'connected';
+    term.focus();
+  };
+
+  socket.onmessage = (event) => {
+    term.write(event.data);
+  };
+
+  socket.onclose = () => {
+    statusDot.className = '';
+    statusText.textContent = 'Disconnected';
+    statusText.className = '';
+    if (!reconnectTimer) {
+      reconnectOverlay.classList.add('show');
+    }
+    socket = null;
+  };
+
+  socket.onerror = () => {
+    // onclose will fire after this
+  };
+}
+
+function reconnect() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  if (socket) {
+    socket.close();
+    socket = null;
+  }
+  connect();
+}
+
+term.onData(data => {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(data);
+  }
+});
+
+term.onResize(({ cols, rows }) => {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send('!resize:' + cols + ':' + rows);
+  }
+});
+
+term.onTitleChange(title => {
+  document.title = title + ' - Claude Code';
+});
+
+function fitTerminal() {
+  try {
+    fitAddon.fit();
+  } catch {}
+}
+
+window.addEventListener('resize', () => {
+  fitTerminal();
+});
+
+connect();
+</script>
+</body>
+</html>
