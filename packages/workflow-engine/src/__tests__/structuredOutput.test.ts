@@ -1,5 +1,8 @@
 import { expect, test } from 'bun:test'
-import { validateAgainstSchema } from '../engine/structuredOutput.js'
+import {
+  assertValidJsonSchema,
+  validateAgainstSchema,
+} from '../engine/structuredOutput.js'
 
 const schema = {
   type: 'object',
@@ -36,5 +39,21 @@ test('same schema reuses cache', () => {
   // second use of the same schema object should hit cache (not throwing is enough)
   expect(validateAgainstSchema({ name: 'b', count: 2 }, schema).valid).toBe(
     true,
+  )
+})
+
+test('assertValidJsonSchema compiles a valid schema without validating a value', () => {
+  expect(() => assertValidJsonSchema({ ...schema })).not.toThrow()
+})
+
+test('assertValidJsonSchema rejects an invalid schema', () => {
+  expect(() =>
+    assertValidJsonSchema({ type: 'definitely-not-a-json-schema-type' }),
+  ).toThrow(/schema/i)
+})
+
+test('assertValidJsonSchema rejects async schemas unsupported by the synchronous validator', () => {
+  expect(() => assertValidJsonSchema({ $async: true, type: 'object' })).toThrow(
+    /async json schemas are not supported/i,
   )
 })
