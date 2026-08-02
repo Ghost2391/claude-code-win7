@@ -144,7 +144,7 @@ export function renderToolUseProgressMessage(
       totalLines={data.totalLines}
       totalBytes={data.totalBytes}
       timeoutMs={data.timeoutMs}
-      taskId={data.taskId}
+      taskId={data?.taskId}
       verbose={verbose}
     />
   );

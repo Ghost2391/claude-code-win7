@@ -173,7 +173,7 @@ Examples:
   renderToolResultMessage(output: MonitorOutput) {
     return (
       <Text>
-        Monitor started (task {output.taskId}). Output: {output.outputFile}
+        Monitor started (task {output?.taskId}). Output: {output?.outputFile}
       </Text>
     );
   },

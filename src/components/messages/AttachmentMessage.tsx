@@ -81,7 +81,7 @@ export function AttachmentMessage({ attachment, addMargin, verbose, isTranscript
               <Box key={idx} paddingLeft={2}>
                 <Text>{BLACK_CIRCLE} </Text>
                 <Text>Task assigned: </Text>
-                <Text bold>#{parsedMsg.taskId}</Text>
+                <Text bold>#{parsedMsg?.taskId}</Text>
                 <Text> - {parsedMsg.subject}</Text>
                 <Text dimColor> (from {parsedMsg.assignedBy || msg.from})</Text>
               </Box>
@@ -463,7 +463,7 @@ function GenericTaskStatus({ attachment }: { attachment: TaskStatusAttachment })
 function TeammateTaskStatus({ attachment }: { attachment: TaskStatusAttachment }): React.ReactNode {
   const bg = useSelectedMessageBg();
   // Narrow selector: only re-render when this specific task changes.
-  const task = useAppState(s => s.tasks[attachment.taskId]);
+  const task = useAppState(s => s.tasks?.[attachment.taskId]);
   if (task?.type !== 'in_process_teammate') {
     // Fall through to generic rendering (task not yet in store, or wrong type)
     return <GenericTaskStatus attachment={attachment} />;
