@@ -30,8 +30,12 @@ test('missing field fails', () => {
 })
 
 test('type error fails', () => {
-  const { valid } = validateAgainstSchema({ name: 'a', count: 'x' }, schema)
+  const { valid, errors } = validateAgainstSchema(
+    { name: 'a', count: 'x' },
+    schema,
+  )
   expect(valid).toBe(false)
+  expect(errors).toContain('/count must be number')
 })
 
 test('same schema reuses cache', () => {

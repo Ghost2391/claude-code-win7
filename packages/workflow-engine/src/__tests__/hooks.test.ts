@@ -333,6 +333,9 @@ test('structured output invalid twice → final dead is journaled without chargi
   expect(final.kind === 'dead' ? final.reason : undefined).toBe(
     'invalid-structured-output',
   )
+  expect(final.kind === 'dead' ? final.detail : undefined).toBe(
+    '/count must be number',
+  )
   expect(appended).toHaveLength(1)
   expect(appended[0]!.result).toEqual(final)
   expect(
@@ -500,6 +503,7 @@ test('valid structured output journal hit is revalidated and skips runner', asyn
 test('invalid legacy structured output journal hit is invalidated and rerun live', async () => {
   let calls = 0
   const truncated: string[] = []
+  const warnings: string[] = []
   const params: AgentRunParams = {
     prompt: 'p',
     schema: STRUCTURED_SCHEMA,
@@ -525,7 +529,9 @@ test('invalid legacy structured output journal hit is invalidated and rerun live
       },
     ],
     truncated,
-    loggerWarn: () => {},
+    loggerWarn: message => {
+      warnings.push(message)
+    },
   })
 
   expect(await hooks.agent('p', { schema: STRUCTURED_SCHEMA })).toEqual({
@@ -534,6 +540,11 @@ test('invalid legacy structured output journal hit is invalidated and rerun live
   expect(calls).toBe(1)
   expect(truncated).toEqual(['r1'])
   expect(ctx.journalInvalidated).toBe(true)
+  expect(
+    warnings.some(message =>
+      message.includes('does not match its structured output schema'),
+    ),
+  ).toBe(true)
   expect(ctx.journal).toHaveLength(1)
   expect(ctx.journal[0]!.result).toEqual({
     kind: 'ok',

@@ -36,6 +36,9 @@ export function validateAgainstSchema(
     valid,
     errors: valid
       ? []
-      : (validate.errors ?? []).map(e => e.message ?? 'validation error'),
+      : (validate.errors ?? []).map(e => {
+          const message = e.message ?? 'validation error'
+          return e.instancePath ? `${e.instancePath} ${message}` : message
+        }),
   }
 }
