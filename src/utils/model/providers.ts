@@ -2,6 +2,7 @@ import type { AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from 
 import { getInitialSettings } from '../settings/settings.js'
 import type { SettingsJson } from '../settings/types.js'
 import { isEnvTruthy } from '../envUtils.js'
+import { getProfileModelType } from './providerProfiles.js'
 
 export type APIProvider =
   | 'firstParty'
@@ -15,7 +16,9 @@ export type APIProvider =
 export function getAPIProvider(
   settings: Pick<SettingsJson, 'modelType'> = getInitialSettings(),
 ): APIProvider {
-  const modelType = settings.modelType
+  // An active provider profile wins over the raw settings modelType; when no
+  // profile is active this falls back to settings.modelType ?? anthropic.
+  const modelType = getProfileModelType(settings)
   if (modelType === 'openai') return 'openai'
   if (modelType === 'gemini') return 'gemini'
   if (modelType === 'grok') return 'grok'

@@ -372,6 +372,48 @@ export const SettingsSchema = lazySchema(() =>
           'API provider type. "anthropic" uses the Anthropic API (default), "openai" uses the OpenAI Chat Completions API, "gemini" uses the Gemini API, and "grok" uses the xAI Grok API (OpenAI-compatible). ' +
             'When set to "openai", configure OPENAI_API_KEY, OPENAI_BASE_URL, and OPENAI_MODEL. When set to "gemini", configure GEMINI_API_KEY and optional GEMINI_BASE_URL. When set to "grok", configure GROK_API_KEY (or XAI_API_KEY), optional GROK_BASE_URL, GROK_MODEL, and GROK_MODEL_MAP.',
         ),
+      // Named provider profiles — multiple named model/endpoint sets that can
+      // be switched between, like opencode's provider config. When a profile is
+      // active, it is materialized into the standard env vars / modelType.
+      providerProfiles: z
+        .array(
+          z.object({
+            id: z.string().describe('Stable id for the profile (slug/uuid)'),
+            name: z.string().describe('Human-readable profile name'),
+            modelType: z
+              .enum(['anthropic', 'openai', 'gemini', 'grok'])
+              .describe('API protocol family for this profile'),
+            baseURL: z
+              .string()
+              .optional()
+              .describe('Endpoint base URL for this profile'),
+            apiKey: z.string().optional().describe('API key for this profile'),
+            haikuModel: z
+              .string()
+              .optional()
+              .describe('Model used for background/token-estimation tasks'),
+            sonnetModel: z
+              .string()
+              .optional()
+              .describe('Model used for the main loop by default'),
+            opusModel: z
+              .string()
+              .optional()
+              .describe('Model used for Opus-tier / heavy tasks'),
+          }),
+        )
+        .optional()
+        .describe(
+          'Named provider profiles. Each captures a complete endpoint + model set. ' +
+            'One can be activated via activeProviderProfile to override modelType and the standard env vars.',
+        ),
+      activeProviderProfile: z
+        .string()
+        .optional()
+        .describe(
+          'Id of the provider profile that is currently active. When set, its ' +
+            'fields override modelType and the standard provider env vars.',
+        ),
       model: z
         .string()
         .optional()

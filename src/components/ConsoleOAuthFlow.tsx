@@ -22,6 +22,12 @@ import { openBrowser } from '../utils/browser.js';
 import { logError } from '../utils/log.js';
 import { getSettings_DEPRECATED, updateSettingsForSource } from '../utils/settings/settings.js';
 import { CHINA_LLM_PROVIDERS, type ProviderPreset, resolveChinaProviderBaseURL } from 'src/utils/chinaLlmProviders.js';
+import {
+  activateProviderProfile,
+  getActiveProviderProfile,
+  getProviderProfiles,
+  saveProviderProfile,
+} from 'src/utils/model/providerProfiles.js';
 import { Select } from './CustomSelect/select.js';
 import { Spinner } from './Spinner.js';
 import TextInput from './TextInput.js';
@@ -72,6 +78,8 @@ type OAuthStatus =
   | { state: 'china_mode_select'; provider: ProviderPreset; activeIndex: number } // China LLM: pick access mode
   | { state: 'china_model_select'; provider: ProviderPreset; mode: 'api' | 'coding-plan'; activeIndex: number } // China LLM: pick model
   | { state: 'china_apikey'; provider: ProviderPreset; mode: 'api' | 'coding-plan'; modelId: string; apiKey: string } // China LLM: enter API key
+  | { state: 'profile_manage' } // Provider profiles: list / switch / delete
+  | { state: 'profile_name' } // Provider profiles: enter a name for the current config
   | { state: 'ready_to_start' } // Flow started, waiting for browser to open
   | { state: 'waiting_for_login'; url: string } // Browser opened, waiting for user to login
   | { state: 'creating_api_key' } // Got access token, creating API key
@@ -476,6 +484,15 @@ function OAuthStatusMessage({
                 {
                   label: (
                     <Text>
+                      Provider Profiles · <Text dimColor>manage saved model sets</Text>
+                      {'\n'}
+                    </Text>
+                  ),
+                  value: 'profile_manage',
+                },
+                {
+                  label: (
+                    <Text>
                       ChatGPT account with subscription · <Text dimColor>Plus, Pro, Business, Edu, or Enterprise</Text>
                       {'\n'}
                     </Text>
@@ -555,6 +572,9 @@ function OAuthStatusMessage({
                 } else if (value === 'china_providers') {
                   logEvent('tengu_china_providers_selected', {});
                   setOAuthStatus({ state: 'china_provider_select', activeIndex: 0 });
+                } else if (value === 'profile_manage') {
+                  logEvent('tengu_provider_profiles_selected', {});
+                  setOAuthStatus({ state: 'profile_manage' });
                 } else if (value === 'chatgpt_subscription') {
                   logEvent('tengu_chatgpt_subscription_selected', {});
                   setOAuthStatus({
@@ -1571,6 +1591,143 @@ function OAuthStatusMessage({
           <Text dimColor>
             {isCustomModelEntry ? 'Enter to continue · Esc to go back' : 'Enter to confirm · Esc to go back'}
           </Text>
+        </Box>
+      );
+    }
+
+    case 'profile_manage': {
+      const profiles = getProviderProfiles();
+      const activeId = getActiveProviderProfile()?.id;
+      const options: Array<{ label: React.ReactNode; value: string }> = [];
+      for (const p of profiles) {
+        const meta = [p.modelType, p.baseURL ?? '', p.sonnetModel ?? p.opusModel ?? ''].filter(Boolean).join(' · ');
+        options.push({
+          label: (
+            <Text>
+              {p.id === activeId ? '✓ ' : '  '}
+              {p.name} · <Text dimColor>{meta}</Text>
+              {'\n'}
+            </Text>
+          ),
+          value: `activate:${p.id}`,
+        });
+      }
+      if (profiles.length === 0) {
+        options.push({
+          label: (
+            <Text>
+              (no profiles yet — save the current config below)
+              {'\n'}
+            </Text>
+          ),
+          value: '__none__',
+        });
+      }
+      options.push({
+        label: (
+          <Text>
+            💾 Save current config as a new profile
+            {'\n'}
+          </Text>
+        ),
+        value: '__save__',
+      });
+      options.push({
+        label: (
+          <Text>
+            ← Back to login options
+            {'\n'}
+          </Text>
+        ),
+        value: '__back__',
+      });
+      return (
+        <Box flexDirection="column" gap={1} marginTop={1}>
+          <Text bold>Provider Profiles</Text>
+          <Text dimColor>Switch between saved model sets. Delete via /provider profile rm &lt;id&gt;.</Text>
+          <Box>
+            <Select
+              options={options}
+              onChange={value => {
+                if (value === '__save__') {
+                  setOAuthStatus({ state: 'profile_name' });
+                } else if (value === '__back__') {
+                  setOAuthStatus({ state: 'idle' });
+                } else if (value === '__none__') {
+                  setOAuthStatus({ state: 'profile_name' });
+                } else if (value.startsWith('activate:')) {
+                  const id = value.slice('activate:'.length);
+                  activateProviderProfile(id);
+                  logEvent('tengu_provider_profile_activated', {});
+                  setOAuthStatus({ state: 'success' });
+                }
+              }}
+            />
+          </Box>
+        </Box>
+      );
+    }
+
+    case 'profile_name': {
+      const [profileName, setProfileName] = useState('');
+      const [profileNameCursor, setProfileNameCursor] = useState(0);
+      const [profileNameError, setProfileNameError] = useState<string | null>(null);
+
+      const doProfileSave = useCallback(() => {
+        const name = profileName.trim();
+        if (!name) {
+          setProfileNameError('Please enter a profile name (or leave this screen to cancel).');
+          return;
+        }
+        const settings = getSettings_DEPRECATED();
+        const currentType = settings.modelType ?? 'anthropic';
+        const key = (name: string) => `${currentType.toUpperCase()}_${name}`;
+        const profile = {
+          name,
+          modelType: currentType,
+          baseURL: process.env[key('BASE_URL')] ?? undefined,
+          apiKey: process.env[key('API_KEY')] ?? process.env.ANTHROPIC_AUTH_TOKEN ?? undefined,
+          haikuModel: process.env[`${currentType.toUpperCase()}_DEFAULT_HAIKU_MODEL`] ?? undefined,
+          sonnetModel: process.env[`${currentType.toUpperCase()}_DEFAULT_SONNET_MODEL`] ?? undefined,
+          opusModel: process.env[`${currentType.toUpperCase()}_DEFAULT_OPUS_MODEL`] ?? undefined,
+        };
+        const id = saveProviderProfile(profile);
+        activateProviderProfile(id);
+        logEvent('tengu_provider_profile_saved', {});
+        setOAuthStatus({ state: 'success' });
+      }, [profileName, setOAuthStatus]);
+
+      useKeybinding(
+        'confirm:no',
+        () => {
+          setOAuthStatus({ state: 'profile_manage' });
+        },
+        { context: 'Confirmation' },
+      );
+
+      return (
+        <Box flexDirection="column" gap={1} marginTop={1}>
+          <Text bold>Save Current Config as Provider Profile</Text>
+          <Text dimColor>
+            This captures the current provider (type + endpoint + API key + 3 model names) into a switchable profile.
+          </Text>
+          <Box>
+            <Text>Profile name: </Text>
+            <TextInput
+              value={profileName}
+              onChange={v => {
+                setProfileName(v);
+                setProfileNameError(null);
+              }}
+              onSubmit={doProfileSave}
+              cursorOffset={profileNameCursor}
+              onChangeCursorOffset={setProfileNameCursor}
+              columns={useTerminalSize().columns - 14}
+              focus={true}
+            />
+          </Box>
+          {profileNameError ? <Text color="error">{profileNameError}</Text> : null}
+          <Text dimColor>Enter to save · Esc to go back</Text>
         </Box>
       );
     }

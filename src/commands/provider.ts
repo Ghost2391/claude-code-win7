@@ -1,6 +1,14 @@
 import type { Command } from '../commands.js'
 import type { LocalCommandCall } from '../types/command.js'
 import { getAPIProvider } from '../utils/model/providers.js'
+import {
+  activateProviderProfile,
+  deactivateProviderProfile,
+  deleteProviderProfile,
+  getActiveProviderProfile,
+  getProviderProfiles,
+  type ProviderProfile,
+} from '../utils/model/providerProfiles.js'
 import { updateSettingsForSource } from '../utils/settings/settings.js'
 import { getSettings_DEPRECATED } from '../utils/settings/settings.js'
 import { applyConfigEnvironmentVariables } from '../utils/managedEnv.js'
@@ -39,10 +47,24 @@ function getMergedEnv(): Record<string, string> {
 const call: LocalCommandCall = async (args, _context) => {
   const arg = args.trim().toLowerCase()
 
+  // profile <id>        — activate a saved provider profile
+  // profile list        — list all saved provider profiles
+  // profile rm <id>     — delete a saved provider profile
+  // profile off         — deactivate the active profile
+  if (arg.startsWith('profile')) {
+    return handleProfileCommand(arg.slice('profile'.length).trim())
+  }
+
   // No argument: show current provider
   if (!arg) {
     const current = getAPIProvider()
-    return { type: 'text', value: `Current API provider: ${current}` }
+    const active = getActiveProviderProfile()
+    return {
+      type: 'text',
+      value: active
+        ? `Current API provider: ${current} (profile: ${active.name})`
+        : `Current API provider: ${current}`,
+    }
   }
 
   // unset - clear settings, fallback to env vars
@@ -167,9 +189,87 @@ const provider = {
   description:
     'Switch API provider (anthropic/openai/gemini/grok/bedrock/vertex/foundry)',
   aliases: ['api'],
-  argumentHint: '[anthropic|openai|gemini|grok|bedrock|vertex|foundry|unset]',
+  argumentHint:
+    '[anthropic|openai|gemini|grok|bedrock|vertex|foundry|unset|profile list|profile <id>|profile rm <id>|profile off]',
   supportsNonInteractive: true,
   load: () => Promise.resolve({ call }),
 } satisfies Command
+
+function handleProfileCommand(rest: string): { type: 'text'; value: string } {
+  const [sub, id] = rest.split(/\s+/)
+
+  if (sub === 'list' || sub === '') {
+    const profiles = getProviderProfiles()
+    const activeId = getActiveProviderProfile()?.id
+    if (profiles.length === 0) {
+      return {
+        type: 'text',
+        value:
+          'No provider profiles configured. Use /login and pick "Save as profile" to create one.',
+      }
+    }
+    const lines = profiles.map(p => {
+      const marker = p.id === activeId ? '* ' : '  '
+      const meta = [
+        p.modelType,
+        p.baseURL ?? '',
+        p.sonnetModel ?? p.opusModel ?? '',
+      ]
+        .filter(Boolean)
+        .join(' · ')
+      return `${marker}${p.name} (${p.id}): ${meta}`
+    })
+    return { type: 'text', value: ['Provider profiles:', ...lines].join('\n') }
+  }
+
+  if (sub === 'off') {
+    deactivateProviderProfile()
+    applyConfigEnvironmentVariables()
+    return {
+      type: 'text',
+      value:
+        'Provider profile deactivated — using settings modelType / env vars.',
+    }
+  }
+
+  if (sub === 'rm') {
+    if (!id) {
+      return { type: 'text', value: 'Usage: /provider profile rm <id>' }
+    }
+    const profile = getProviderProfiles().find(p => p.id === id)
+    if (!profile) {
+      return { type: 'text', value: `No provider profile with id: ${id}` }
+    }
+    deleteProviderProfile(id)
+    applyConfigEnvironmentVariables()
+    return {
+      type: 'text',
+      value: `Removed provider profile "${profile.name}".`,
+    }
+  }
+
+  // Activate by id or by name (case-insensitive)
+  const profile = matchProfile(sub)
+  if (!profile) {
+    return {
+      type: 'text',
+      value: `Unknown provider profile: ${sub}\nUsage: /provider profile list | <id> | rm <id> | off`,
+    }
+  }
+  activateProviderProfile(profile.id)
+  applyConfigEnvironmentVariables()
+  return {
+    type: 'text',
+    value: `Activated provider profile "${profile.name}" (${profile.modelType}).`,
+  }
+}
+
+function matchProfile(needle: string): ProviderProfile | undefined {
+  const profiles = getProviderProfiles()
+  return (
+    profiles.find(p => p.id === needle) ??
+    profiles.find(p => p.name.toLowerCase() === needle.toLowerCase())
+  )
+}
 
 export default provider

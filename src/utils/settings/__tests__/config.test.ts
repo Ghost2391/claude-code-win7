@@ -474,3 +474,29 @@ describe('gemini settings', () => {
     expect(result.success).toBe(true)
   })
 })
+
+describe('provider profiles', () => {
+  test('accepts providerProfiles and activeProviderProfile', () => {
+    const result = SettingsSchema().safeParse({
+      providerProfiles: [
+        {
+          id: 'deepseek-local',
+          name: 'DeepSeek',
+          modelType: 'openai',
+          baseURL: 'https://api.deepseek.com',
+          apiKey: 'sk-abc',
+          sonnetModel: 'deepseek-v4-pro',
+        },
+      ],
+      activeProviderProfile: 'deepseek-local',
+    })
+    expect(result.success).toBe(true)
+  })
+
+  test('rejects invalid modelType in a profile', () => {
+    const result = SettingsSchema().safeParse({
+      providerProfiles: [{ id: 'x', name: 'X', modelType: 'bedrock' }],
+    })
+    expect(result.success).toBe(false)
+  })
+})
