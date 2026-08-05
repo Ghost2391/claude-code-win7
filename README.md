@@ -164,6 +164,60 @@ bun run build
 
 > ℹ️ 支持所有 Anthropic API 兼容服务（如 OpenRouter、AWS Bedrock 代理等），只要接口兼容 Messages API 即可。
 
+### 🔄 多套 Provider Profile（动态切换模型/服务商）
+
+配置多套命名模型集，随时切换，无需手改 settings.json 或重启：
+
+```bash
+/provider                     # 显示当前 provider 及激活的 profile
+/provider profile list        # 列出所有已保存的 profile
+/provider profile <id>        # 切换到指定 profile（支持按名称匹配）
+/provider profile rm <id>     # 删除某个 profile
+/provider profile off         # 停用 profile，回落到 settings.modelType / env
+/provider openai|gemini|grok|anthropic   # 直接切换协议族
+```
+
+在 `/login` 中选择 **Provider Profiles · manage saved model sets** 可：
+- 列出/激活已保存的 profile
+- 把当前配置（服务商 + 地址 + 密钥 + 3 个模型）保存为新的命名 profile
+
+**推荐流程**：
+1. `/login` 配好第一套（如 DeepSeek）→ Provider Profiles 里存为命名 profile
+2. 再配第二套（如 GLM / Qwen）→ 同样存为 profile
+3. 之后用 `/provider profile <id>` 秒切，无需重启
+
+配置存放在 `~/.claude/settings.json` 的 `providerProfiles` 数组 + `activeProviderProfile` 字段，也可直接手写：
+
+```json
+{
+  "activeProviderProfile": "deepseek",
+  "providerProfiles": [
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "modelType": "openai",
+      "baseURL": "https://api.deepseek.com",
+      "apiKey": "sk-xxx",
+      "haikuModel": "deepseek-v4-flash",
+      "sonnetModel": "deepseek-v4-pro",
+      "opusModel": "deepseek-v4-pro"
+    },
+    {
+      "id": "glm",
+      "name": "智谱 GLM",
+      "modelType": "openai",
+      "baseURL": "https://open.bigmodel.cn/api/paas/v4",
+      "apiKey": "1234.xxx",
+      "haikuModel": "glm-4.7-flash",
+      "sonnetModel": "glm-4.7",
+      "opusModel": "glm-5.1"
+    }
+  ]
+}
+```
+
+激活的 profile 会自动物化为对应协议族的环境变量（`OPENAI_*` / `GEMINI_*` / `ANTHROPIC_*` / `GROK_*`），运行时模型解析与 API 客户端无需改动。
+
 ## Feature Flags
 
 所有功能开关通过 `FEATURE_<FLAG_NAME>=1` 环境变量启用，例如：
