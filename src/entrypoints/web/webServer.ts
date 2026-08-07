@@ -37,6 +37,8 @@ export async function startWebServer(
 ): Promise<void> {
   const port = options.port ?? (Number(process.env.CLAUDE_WEB_PORT) || 3000)
   const host = options.host ?? (process.env.CLAUDE_WEB_HOST || '127.0.0.1')
+  const cols = Number(process.env.CLAUDE_WEB_COLS) || 150
+  const rows = Number(process.env.CLAUDE_WEB_ROWS) || 40
   const children = new Set<import('child_process').ChildProcess>()
 
   const { WebSocketServer } = await tryLoadWs()
@@ -87,8 +89,8 @@ export async function startWebServer(
       TERM: 'xterm-256color',
       TERM_PROGRAM: 'xterm.js',
       COLORTERM: 'truecolor',
-      COLUMNS: '120',
-      LINES: '40',
+      COLUMNS: String(cols),
+      LINES: String(rows),
     }
 
     const child = spawn(process.execPath, [scriptPath, ...filteredArgs], {

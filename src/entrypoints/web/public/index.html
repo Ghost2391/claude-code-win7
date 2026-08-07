@@ -107,7 +107,7 @@ const term = new Terminal({
     brightCyan: '#4dd0e1',
     brightWhite: '#ffffff',
   },
-  cols: 120,
+  cols: 150,
   rows: 40,
 });
 
@@ -235,15 +235,10 @@ term.onTitleChange(title => {
   document.title = title + ' - Claude Code';
 });
 
-function fitTerminal() {
-  try {
-    fitAddon.fit();
-  } catch {}
-}
-
-window.addEventListener('resize', () => {
-  fitTerminal();
-});
+// Terminal width is fixed to match the child process (150 cols). Fitting to
+// the container would change xterm's column count independently of the child,
+// causing line-wrap mismatches — so keep it fixed instead.
+window.addEventListener('resize', () => {});
 
 connect();
 </script>
