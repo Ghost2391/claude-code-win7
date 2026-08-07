@@ -138,11 +138,6 @@ function connect() {
 
   socket.onmessage = (event) => {
     term.write(event.data);
-    // Keep the viewport pinned to the newest output. Ink renders the full
-    // frame with absolute cursor positioning, so xterm doesn't auto-scroll
-    // to the bottom like a plain shell would — without this, tall screens
-    // (e.g. /login menus) leave later options below the visible area.
-    term.scrollToBottom();
   };
 
   socket.onclose = () => {
