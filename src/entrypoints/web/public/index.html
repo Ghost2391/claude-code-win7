@@ -173,6 +173,58 @@ term.onData(data => {
   }
 });
 
+// Ctrl+V / Cmd+V paste: read clipboard and send to the child process as text
+// input. Fall back to a hidden textarea trick when the async Clipboard API is
+// unavailable (older browsers / non-secure contexts).
+term.attachCustomKeyEventHandler(e => {
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) {
+    e.preventDefault();
+    pasteFromClipboard();
+    return false;
+  }
+  return true;
+});
+
+function pasteFromClipboard() {
+  if (navigator.clipboard && navigator.clipboard.readText) {
+    navigator.clipboard.readText().then(text => {
+      sendPaste(text);
+    }).catch(() => {
+      pasteFallback();
+    });
+  } else {
+    pasteFallback();
+  }
+}
+
+function sendPaste(text) {
+  if (!text) return;
+  // Translate \r\n to \r for terminal semantics
+  const normalized = text.replace(/\r\n/g, '\r');
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(normalized);
+  }
+}
+
+function pasteFallback() {
+  const ta = document.createElement('textarea');
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.addEventListener('paste', e => {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text');
+    sendPaste(text);
+    document.body.removeChild(ta);
+  });
+  // Some browsers require a user gesture to allow execCommand paste
+  document.execCommand('paste');
+  setTimeout(() => {
+    if (document.body.contains(ta)) document.body.removeChild(ta);
+  }, 1000);
+}
+
 term.onResize(({ cols, rows }) => {
   if (socket && socket.readyState === WebSocket.OPEN) {
     socket.send('!resize:' + cols + ':' + rows);
