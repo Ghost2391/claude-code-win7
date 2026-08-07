@@ -38,28 +38,6 @@ if (isEnvTruthy(process.env.CLAUDE_CODE_FORCE_INTERACTIVE)) {
   if (typeof process.stdin.setRawMode !== 'function') {
     (process.stdin as any).setRawMode = () => process.stdin;
   }
-
-  // --web mode: stdout is a pipe with no columns/rows, so Ink falls back to
-  // 80 cols. Expose columns/rows getters sourced from COLUMNS/LINES env (set
-  // by webServer.ts) so the REPL renders wider and matches the xterm client.
-  if (process.env.CLAUDE_CODE_WEB_MODE === '1') {
-    const webCols = Number(process.env.COLUMNS) || 120;
-    const webRows = Number(process.env.LINES) || 40;
-    for (const stream of [process.stdout, process.stderr]) {
-      try {
-        Object.defineProperty(stream, 'columns', {
-          configurable: true,
-          get: () => webCols,
-        });
-        Object.defineProperty(stream, 'rows', {
-          configurable: true,
-          get: () => webRows,
-        });
-      } catch {
-        // Non-configurable columns/rows (real TTY) — leave as-is.
-      }
-    }
-  }
 }
 
 // Bugfix for corepack auto-pinning, which adds yarnpkg to peoples' package.jsons
