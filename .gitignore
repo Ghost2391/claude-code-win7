@@ -58,3 +58,6 @@ credentials.json
 .test-progress.md
 .squash-tmp/
 .git.*-backup
+.codegraph/
+.claude/
+dist-linux.zip

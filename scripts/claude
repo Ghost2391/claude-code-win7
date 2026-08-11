@@ -1,0 +1,51 @@
+#!/bin/sh
+# ============================================================
+# Claude Code Linux Launcher
+#
+# Runs the built dist/cli-node.js. No version pinning — uses
+# whatever `node` (>=18) or `bun` is on the PATH. Config lives
+# in ~/.claude or $CLAUDE_CONFIG_DIR (standard Claude Code layout),
+# unlike the Win7 claude.cmd which keeps everything in-tree.
+#
+# Usage:  dist/claude [args]      (or symlink into your PATH)
+# ============================================================
+
+set -e
+
+# ---- Resolve the directory containing this script (follow symlinks) ----
+SCRIPT_SOURCE=$0
+while [ -h "$SCRIPT_SOURCE" ]; do
+  SCRIPT_DIR=$(cd -P "$(dirname "$SCRIPT_SOURCE")" >/dev/null 2>&1 && pwd)
+  SCRIPT_SOURCE=$(readlink "$SCRIPT_SOURCE")
+  case "$SCRIPT_SOURCE" in
+    /*) ;;
+    *) SCRIPT_SOURCE="$SCRIPT_DIR/$SCRIPT_SOURCE" ;;
+  esac
+done
+SCRIPT_DIR=$(cd -P "$(dirname "$SCRIPT_SOURCE")" >/dev/null 2>&1 && pwd)
+
+# If invoked as dist/claude, project root is one level up.
+PROJECT_ROOT=$(cd -P "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd)
+
+CLI_JS="$SCRIPT_DIR/cli-node.js"
+if [ ! -f "$CLI_JS" ]; then
+  CLI_JS="$PROJECT_ROOT/dist/cli-node.js"
+fi
+if [ ! -f "$CLI_JS" ]; then
+  echo "[claude] ERROR: dist/cli-node.js not found. Run 'bun run build:linux' first." >&2
+  exit 1
+fi
+
+# If the tree was symlinked into ~/.local/bin, go up from the real location.
+REAL_DIR=$(cd -P "$(dirname "$CLI_JS")" >/dev/null 2>&1 && pwd)
+CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude}
+if [ -z "$CLAUDE_CONFIG_DIR" ]; then
+  export CLAUDE_CONFIG_DIR="$CONFIG_DIR"
+fi
+
+# Prefer node (same runtime the bundle is patched for), fall back to bun.
+if command -v node >/dev/null 2>&1; then
+  exec node "$CLI_JS" "$@"
+fi
+
+exec bun "$CLI_JS" "$@"
