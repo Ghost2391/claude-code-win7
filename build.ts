@@ -1,9 +1,13 @@
 import { mkdir, readdir, readFile, rename, writeFile, cp } from 'fs/promises'
-import { join } from 'path'
+import { join, resolve } from 'path'
 import { getMacroDefines } from './scripts/defines.ts'
 import { DEFAULT_BUILD_FEATURES } from './scripts/defines.ts'
+import { generateEmbeddedWebAssets } from './scripts/embedWebAssets.ts'
 
 const outdir = 'dist'
+
+// Step 0: Embed the static web assets so the bundled build carries them too.
+await generateEmbeddedWebAssets(resolve(import.meta.dir))
 
 // Step 1: Clean output directory
 const { rmSync } = await import('fs')

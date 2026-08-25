@@ -3,8 +3,26 @@ import fs from 'fs'
 import path from 'path'
 import { spawn } from 'child_process'
 
-const entryDir = path.dirname(path.resolve(process.argv[1] || '.'))
-const publicDir = path.join(entryDir, 'web', 'public')
+import { EMBEDDED_WEB_ASSETS } from './embeddedAssets.generated.js'
+
+// In a compiled standalone binary, `process.argv[1]` is the first CLI argument
+// (e.g. "--web"), not the binary path, so we must resolve the asset directory
+// from several candidates. The embedded map is the ultimate fallback.
+function resolvePublicDir(): string {
+  const candidates = [
+    path.dirname(process.execPath),
+    path.dirname(path.resolve(process.argv[1] || '.')),
+    path.resolve('.'),
+  ]
+  for (const dir of candidates) {
+    const dirpath = path.join(dir, 'web', 'public')
+    if (fs.existsSync(dirpath)) return dirpath
+  }
+  // Fall back to the binary-adjacent path so error messages are sensible.
+  return path.join(path.dirname(process.execPath), 'web', 'public')
+}
+
+const publicDir = resolvePublicDir()
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -13,6 +31,11 @@ const MIME_TYPES: Record<string, string> = {
   '.png': 'image/png',
   '.ico': 'image/x-icon',
   '.svg': 'image/svg+xml',
+}
+
+function contentTypeFor(urlPath: string): string {
+  const ext = path.extname(urlPath) || '.html'
+  return MIME_TYPES[ext] || 'application/octet-stream'
 }
 
 export interface WebServerOptions {
@@ -43,10 +66,19 @@ export async function startWebServer(
 
   const server = http.createServer((req, res) => {
     const safePath = req.url?.split('?')[0] ?? '/index.html'
-    const filePath = path.join(
-      publicDir,
-      safePath === '/' ? 'index.html' : safePath,
-    )
+    const urlPath = safePath === '/' ? '/index.html' : safePath
+
+    // 1) Serve from the in-binary embedded assets (always available in a
+    //    compiled binary, regardless of where the executable is deployed).
+    const embedded = EMBEDDED_WEB_ASSETS[urlPath]
+    if (embedded !== undefined) {
+      res.writeHead(200, { 'Content-Type': contentTypeFor(urlPath) })
+      res.end(embedded)
+      return
+    }
+
+    // 2) Fall back to the filesystem (dev mode / non-embedded builds).
+    const filePath = path.join(publicDir, urlPath)
 
     if (!filePath.startsWith(publicDir)) {
       res.writeHead(403)
@@ -60,10 +92,7 @@ export async function startWebServer(
         res.end('Not found')
         return
       }
-      const ext = path.extname(filePath)
-      res.writeHead(200, {
-        'Content-Type': MIME_TYPES[ext] || 'application/octet-stream',
-      })
+      res.writeHead(200, { 'Content-Type': contentTypeFor(filePath) })
       res.end(data)
     })
   })

@@ -21,6 +21,7 @@
 import { cp, mkdir, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { getMacroDefines, DEFAULT_BUILD_FEATURES } from './defines.ts'
+import { generateEmbeddedWebAssets } from './embedWebAssets.ts'
 
 const root = resolve(import.meta.dir, '..')
 const outdir = join(root, 'dist')
@@ -31,6 +32,10 @@ const target = arg.split('=')[1]
 
 const binName = /^bun-(windows|win)/i.test(target) ? 'claude.exe' : 'claude'
 const binPath = join(outdir, binName)
+
+// Embed the static web assets into the binary so --web mode works even when
+// web/public is not deployed next to the executable.
+await generateEmbeddedWebAssets(root)
 
 // NOTE: Bun's public `Target` type only lists "bun" | "node" | "browser",
 // but the runtime also accepts cross-compile targets (e.g. "bun-linux-x64",
