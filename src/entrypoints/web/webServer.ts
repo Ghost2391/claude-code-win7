@@ -38,6 +38,15 @@ function contentTypeFor(urlPath: string): string {
   return MIME_TYPES[ext] || 'application/octet-stream'
 }
 
+function filterArgs(args: string[]): string[] {
+  return args.filter((a, i, arr) => {
+    if (a === '--web') return false
+    if (a === '--port') return false
+    if (arr[i - 1] === '--port') return false
+    return true
+  })
+}
+
 export interface WebServerOptions {
   port?: number
   host?: string
@@ -101,14 +110,18 @@ export async function startWebServer(
   wss.on('error', () => {})
 
   wss.on('connection', ws => {
-    const scriptPath = path.resolve(process.argv[1]!)
-    const filteredArgs = process.argv.slice(2).filter((a, i, arr) => {
-      if (a === '--web') return false
-      if (a === '--port') return false
-      if (arr[i - 1] === '--port') return false
-      return true
-    })
-
+    // In a compiled standalone binary process.argv[1] is the first CLI arg
+    // (e.g. "--web"), not a script path — spawn ourselves directly. In the
+    // JS/bundled layouts argv[1] is the entry script (dist/cli.js), which must
+    // be passed as the child's script argument.
+    const argv1 = process.argv[1]
+    const scriptPath =
+      argv1 && !argv1.startsWith('-') && fs.existsSync(path.resolve(argv1))
+        ? path.resolve(argv1)
+        : undefined
+    const spawnArgs = scriptPath
+      ? [scriptPath, ...filterArgs(process.argv.slice(2))]
+      : filterArgs(process.argv.slice(2))
     const childEnv: Record<string, string | undefined> = {
       ...process.env,
       CLAUDE_CODE_FORCE_INTERACTIVE: '1',
@@ -120,7 +133,7 @@ export async function startWebServer(
       LINES: '40',
     }
 
-    const child = spawn(process.execPath, [scriptPath, ...filteredArgs], {
+    const child = spawn(process.execPath, spawnArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: childEnv as NodeJS.ProcessEnv,
       cwd: process.cwd(),

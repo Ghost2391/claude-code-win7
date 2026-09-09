@@ -18,7 +18,7 @@
  *         bun run build:binary -- --target=bun-windows-x64
  */
 
-import { cp, mkdir, rm } from 'node:fs/promises'
+import { cp, mkdir, rm, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { getMacroDefines, DEFAULT_BUILD_FEATURES } from './defines.ts'
 import { generateEmbeddedWebAssets } from './embedWebAssets.ts'
@@ -93,23 +93,27 @@ await rm(join(outdir, 'binary-build'), { recursive: true, force: true })
 
 console.log(`[build:binary] Done → ${binPath}`)
 
-// Copy the static web assets and vendor dirs beside the binary so
-// --web mode, audio-capture and embedded ripgrep can find them at runtime.
+// Copy vendor binaries beside the exe so they can be found at runtime via
+// path.dirname(process.execPath). web/public is NOT copied — its assets are
+// already embedded into the binary (EMBEDDED_WEB_ASSETS) and served in memory.
 await mkdir(join(outdir, 'vendor'), { recursive: true })
 await cp(
   join(root, 'vendor', 'audio-capture'),
   join(outdir, 'vendor', 'audio-capture'),
   { recursive: true },
 ).catch(() => {})
-await cp(
-  join(root, 'src', 'utils', 'vendor', 'ripgrep'),
-  join(outdir, 'vendor', 'ripgrep'),
-  { recursive: true },
-).catch(() => {})
-await cp(
-  join(root, 'src', 'entrypoints', 'web', 'public'),
-  join(outdir, 'web', 'public'),
-  { recursive: true },
-).catch(() => {})
+const rgSrc = join(root, 'src', 'utils', 'vendor', 'ripgrep')
+const rgDst = join(outdir, 'vendor', 'ripgrep')
+if (!(await stat(rgSrc).catch(() => null))?.isDirectory()) {
+  console.error(
+    `[build:binary] ERROR: bundled ripgrep missing at ${rgSrc}.\n` +
+      'Run the postinstall step first (it downloads rg from microsoft/ripgrep-prebuilt); ' +
+      'a standalone binary without bundled rg would silently fall back to system rg.',
+  )
+  process.exit(1)
+}
+await cp(rgSrc, rgDst, { recursive: true })
 
-console.log('[build:binary] Copied vendor/ + web/ assets next to binary.')
+console.log(
+  '[build:binary] Copied vendor/ assets next to binary (web/ is embedded).',
+)
