@@ -178,7 +178,6 @@ bun run docs:dev
 | `packages/image-processor-napi/` | 图像处理（已恢复） |
 | `packages/modifiers-napi/` | 键盘修饰键检测（macOS FFI 实现） |
 | `packages/url-handler-napi/` | URL scheme 处理（环境变量 + CLI 参数读取） |
-| `packages/weixin/` | 微信集成（非 workspace 包） |
 
 辅助目录（无 package.json，非 workspace 包）: `langfuse-dashboard`（Langfuse 面板）、`shared-web-ui`（共享 Web UI 组件）、`highlight-code`（代码高亮）、`claude-pencil`（编辑器）、`vscode-ide-bridge`（VS Code 桥接）、`pokemon`（示例/测试）。
 

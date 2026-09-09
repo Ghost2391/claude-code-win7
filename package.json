@@ -1,6 +1,6 @@
 {
   "name": "claude-code-best",
-  "version": "2.8.2",
+  "version": "2.8.4",
   "description": "Reverse-engineered Anthropic Claude Code CLI — interactive AI coding assistant in the terminal",
   "type": "module",
   "author": "claude-code-best <claude-code-best@proton.me>",
@@ -45,12 +45,11 @@
     "build:vite": "vite build && bun run scripts/post-build.ts",
     "build:vite:only": "vite build",
     "build:bun": "bun run build.ts",
-    "build:win7": "bun run build:vite",
     "build:linux": "bun run scripts/build-linux.ts",
-    "run:win7": "dist\\claude.cmd",
+    "run:windows": "dist\\claude.cmd",
     "run:linux": "dist/claude",
     "build:binary": "bun run scripts/build-binary.ts",
-    "postbuild:win7": "bun run scripts/post-build.ts",
+    "post-build": "bun run scripts/post-build.ts",
     "dev": "bun run scripts/dev.ts",
     "dev:inspect": "bun run scripts/dev-debug.ts",
     "prepublishOnly": "bun run build:vite",
@@ -105,7 +104,6 @@
     "@claude-code-best/agent-tools": "workspace:*",
     "@claude-code-best/builtin-tools": "workspace:*",
     "@claude-code-best/mcp-client": "workspace:*",
-    "@claude-code-best/weixin": "workspace:*",
     "@commander-js/extra-typings": "^14.0.0",
     "@growthbook/growthbook": "^1.6.5",
     "@langfuse/otel": "^5.1.0",
@@ -226,8 +224,7 @@
     "follow-redirects": "1.16.0",
     "hono": "4.12.15",
     "postcss": "8.5.10",
-    "uuid": "14.0.0",
-    "string-width": "7.2.0"
+    "uuid": "14.0.0"
   },
   "lint-staged": {
     "*.{ts,tsx,js,mjs,jsx}": [

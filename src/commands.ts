@@ -192,10 +192,6 @@ import summary from './commands/summary/index.js'
 import recap from './commands/recap/index.js'
 import skillLearning from './commands/skill-learning/index.js'
 import skillSearch from './commands/skill-search/index.js'
-import {
-  resetLimits,
-  resetLimitsNonInteractive,
-} from './commands/reset-limits/index.js'
 import antTrace from './commands/ant-trace/index.js'
 import perfIssue from './commands/perf-issue/index.js'
 import sandboxToggle from './commands/sandbox-toggle/index.js'
@@ -286,8 +282,6 @@ export const INTERNAL_ONLY_COMMANDS = [
   bughunter,
   goodClaude,
   mockLimits,
-  resetLimits,
-  resetLimitsNonInteractive,
   antTrace,
   oauthRefresh,
 ].filter(Boolean)

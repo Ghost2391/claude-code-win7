@@ -14,11 +14,8 @@
  * 2. Call registerBuiltinPlugin() with the plugin definition here
  */
 
-import { registerWeixinBuiltinPlugin } from './weixin.js'
-
 /**
  * Initialize built-in plugins. Called during CLI startup.
+ * No built-in plugins ship with the CLI currently.
  */
-export function initBuiltinPlugins(): void {
-  registerWeixinBuiltinPlugin()
-}
+export function initBuiltinPlugins(): void {}

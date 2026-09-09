@@ -133,34 +133,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (args[0] === 'weixin') {
-    profileCheckpoint('cli_weixin_path');
-    const { handleWeixinCli } = await import('@claude-code-best/weixin');
-    const { enableConfigs } = await import('../utils/config.js');
-    const { initializeAnalyticsSink } = await import('../services/analytics/sink.js');
-    const { shutdownDatadog } = await import('../services/analytics/datadog.js');
-    const { shutdown1PEventLogging } = await import('../services/analytics/firstPartyEventLogger.js');
-    const { logForDebugging } = await import('../utils/debug.js');
-    const { ChannelPermissionRequestNotificationSchema } = await import('../services/mcp/channelNotification.js');
-    await handleWeixinCli(
-      args.slice(1),
-      {
-        enableConfigs,
-        initializeAnalyticsSink,
-        shutdownDatadog,
-        shutdown1PEventLogging,
-        logForDebugging,
-        registerPermissionHandler(server, handler) {
-          server.setNotificationHandler(ChannelPermissionRequestNotificationSchema(), async notification =>
-            handler(notification.params),
-          );
-        },
-      },
-      MACRO.VERSION,
-    );
-    return;
-  }
-
   // Fast-path for `--daemon-worker=<kind>` (internal — supervisor spawns this).
   // Must come before the daemon subcommand check: spawned per-worker, so
   // perf-sensitive. No enableConfigs(), no analytics sinks at this layer —
@@ -349,8 +321,7 @@ async function main(): Promise<void> {
   }
 
   // Fast-path for --web: start a web-based terminal server
-  // Spawns the CLI as a child process and bridges IO via WebSocket + xterm.js
-  // to bypass Win7 console rendering issues.
+  // Spawns the CLI as a child process and bridges IO via WebSocket + xterm.js.
   if (args.includes('--web')) {
     profileCheckpoint('cli_web_path');
     const portIndex = args.indexOf('--port');
