@@ -80,41 +80,8 @@ for (const file of files) {
 }
 BUN_DESTRUCTURE.lastIndex = 0
 
-// Transpile `using _ = ...` and `await using _ = ...` to `const`
-// for Node.js 18 compat (ES2024 Explicit Resource Management).
-let usingPatched = 0
-const AWAIT_USING_DECL = /\bawait\s+using\s+(\w+)\s*=/g
-const USING_DECL = /(?<!\bawait\s)\busing\s+(\w+)\s*=/g
-for (const file of files) {
-  if (!file.endsWith('.js')) continue
-  const filePath = join(outdir, file)
-  const content = await readFile(filePath, 'utf-8')
-  USING_DECL.lastIndex = 0
-  AWAIT_USING_DECL.lastIndex = 0
-  const hasUsing = USING_DECL.test(content)
-  USING_DECL.lastIndex = 0
-  const hasAwaitUsing = AWAIT_USING_DECL.test(content)
-  AWAIT_USING_DECL.lastIndex = 0
-  if (hasUsing || hasAwaitUsing) {
-    let patchedContent = content
-    // Process await using FIRST so 'using' doesn't leave orphaned 'await'
-    if (hasAwaitUsing) {
-      AWAIT_USING_DECL.lastIndex = 0
-      patchedContent = patchedContent.replace(AWAIT_USING_DECL, 'const $1 =')
-    }
-    if (hasUsing) {
-      USING_DECL.lastIndex = 0
-      patchedContent = patchedContent.replace(USING_DECL, 'const $1 =')
-    }
-    await writeFile(filePath, patchedContent)
-    usingPatched++
-  }
-}
-USING_DECL.lastIndex = 0
-AWAIT_USING_DECL.lastIndex = 0
-
 console.log(
-  `Bundled ${result.outputs.length} files (patched ${patched} import.meta.require, ${bunPatched} Bun destructure, ${usingPatched} using→const)`,
+  `Bundled ${result.outputs.length} files (patched ${patched} import.meta.require, ${bunPatched} Bun destructure)`,
 )
 
 // Step 4: Organize — move chunk files into dist/chunks/ subdirectory.
@@ -174,7 +141,7 @@ await writeFile(
 )
 console.log(`Generated ${outdir}/package.json`)
 
-// Step 9: Copy Win7 launcher script (convert LF→CRLF — cmd.exe can't parse
+// Step 9: Copy Windows launcher script (convert LF→CRLF — cmd.exe can't parse
 // LF-only batch files, producing "'tlocal' is not recognized" etc.)
 {
   const cmdContent = await readFile('scripts/claude.cmd', 'utf-8')

@@ -3,7 +3,7 @@
  * Linux build wrapper.
  *
  * Runs the standard `bun run build` (build.ts) which produces a
- * platform-independent JS bundle in dist/, then swaps the Win7
+ * platform-independent JS bundle in dist/, then swaps the Windows
  * claude.cmd launcher for a POSIX `claude` shell script.
  *
  * The rest of dist/ (cli-node.js, cli-bun.js, chunks/, vendor/,
@@ -33,7 +33,7 @@ if (build.status !== 0) {
   process.exit(build.status ?? 1)
 }
 
-// 2. Replace the Win7 claude.cmd with a POSIX launcher.
+// 2. Replace the Windows claude.cmd with a POSIX launcher.
 const winLauncher = join(outdir, 'claude.cmd')
 const posixLauncher = join(outdir, 'claude')
 rmSync(winLauncher, { force: true })

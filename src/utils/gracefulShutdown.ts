@@ -61,8 +61,8 @@ function cleanupTerminalModes(): void {
   try {
     // Hard SGR reset before anything else: a leftover color/dim attribute
     // from the last rendered frame (or the chalk.dim resume hint) otherwise
-    // leaks into the shell. On Win7 libuv doesn't reliably apply chalk's 22m
-    // dim-off; ESC[0m is universally supported and a harmless no-op elsewhere.
+    // leaks into the shell. ESC[0m is universally supported and a harmless
+    // no-op on terminals that already cleaned up their attributes.
     writeSync(1, '\x1b[0m')
     // Disable mouse tracking FIRST, before the React unmount tree-walk.
     // The terminal needs a round-trip to process this and stop sending

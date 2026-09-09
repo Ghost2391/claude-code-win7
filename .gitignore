@@ -2,7 +2,7 @@ node_modules
 .DS_Store
 dist
 dist.zip
-node-v18.20.8-win-x64/
+.bun-cache/
 coverage
 .env
 *.log

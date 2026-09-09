@@ -3,9 +3,8 @@
 # Claude Code Linux Launcher
 #
 # Runs the built dist/cli-node.js. No version pinning — uses
-# whatever `node` (>=18) or `bun` is on the PATH. Config lives
-# in ~/.claude or $CLAUDE_CONFIG_DIR (standard Claude Code layout),
-# unlike the Win7 claude.cmd which keeps everything in-tree.
+# whatever `node` (>=22) or `bun` is on the PATH. Config lives
+# in ~/.claude or $CLAUDE_CONFIG_DIR (standard Claude Code layout).
 #
 # Usage:  dist/claude [args]      (or symlink into your PATH)
 # ============================================================

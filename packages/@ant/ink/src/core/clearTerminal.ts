@@ -66,7 +66,7 @@ function isModernWindowsTerminal(): boolean {
  * frames stack. Modern Windows terminals (Windows Terminal / VS Code / mintty)
  * are excluded because they handle ESC[3J and don't stack.
  *
- * Covers Win7 (NT 6.1) and any later Windows running in a non-modern console.
+ * Covers any Windows running in a non-modern console (legacy conhost).
  */
 export function isLegacyWindowsConsole(): boolean {
   return process.platform === 'win32' && !isModernWindowsTerminal()

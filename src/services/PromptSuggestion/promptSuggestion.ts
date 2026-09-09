@@ -35,7 +35,7 @@ export function getPromptVariant(): PromptVariant {
 }
 
 export function shouldEnablePromptSuggestion(): boolean {
-  // Prompt suggestion disabled (Win7 port — extra API calls for marginal value)
+  // Prompt suggestion disabled by default — extra API calls for marginal value.
   return false
 
   // Env var overrides everything (for testing)

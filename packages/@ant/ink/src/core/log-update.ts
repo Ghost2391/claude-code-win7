@@ -555,7 +555,7 @@ function buildStyledRow(
  * Repaints ALL visible rows (not just changed ones) — this path only runs on
  * the infrequent full-reset (first overflow / resize / large shrink), so the
  * cost is negligible and it avoids the "only repaint changed rows → lost
- * output" failure mode of the reverted renderWin7FullFrame.
+ * output" failure mode of the earlier full-frame repaint approach.
  *
  * Cursor end-state mirrors the normal full-reset (renderFrame ends below the
  * last content row at column 0): when the logical cursor sits below a full

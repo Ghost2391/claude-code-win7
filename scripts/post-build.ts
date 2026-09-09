@@ -68,7 +68,7 @@ async function postBuild() {
   await cp('src/utils/vendor/ripgrep', ripgrepDir, { recursive: true } as never)
   console.log(`Copied src/utils/vendor/ripgrep/ → ${ripgrepDir}/`)
 
-  // Step 2.5: Copy Win7 launcher script
+  // Step 2.5: Copy Windows launcher script
   await cp('scripts/claude.cmd', join(outdir, 'claude.cmd'))
   console.log(`Copied scripts/claude.cmd → ${outdir}/claude.cmd`)
 
