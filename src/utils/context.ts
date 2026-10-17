@@ -1,6 +1,7 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { CONTEXT_1M_BETA_HEADER } from '../constants/betas.js'
 import { getGlobalConfig } from './config.js'
+import { getInitialSettings } from './settings/settings.js'
 import { isEnvTruthy } from './envUtils.js'
 import { getCanonicalName } from './model/model.js'
 import { resolveAntModel } from './model/antModels.js'
@@ -74,6 +75,21 @@ export function getContextWindowForModel(
   // [1m] suffix — explicit client-side opt-in, respected over all detection
   if (has1mContext(model)) {
     return 1_000_000
+  }
+
+  // customModels on the active provider profile may declare an explicit
+  // contextWindow (e.g. GLM 128K, Qwen 1M) for non-Anthropic endpoints.
+  const profileSettings = getInitialSettings()
+  const activeProfile = profileSettings.providerProfiles?.find(
+    p => p.id === profileSettings.activeProviderProfile,
+  )
+  if (activeProfile?.customModels) {
+    const match = activeProfile.customModels.find(
+      m => (typeof m === 'string' ? m : m.value) === model,
+    )
+    if (match && typeof match !== 'string' && match.contextWindow) {
+      return match.contextWindow
+    }
   }
 
   const cap = getModelCapability(model)

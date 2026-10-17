@@ -9,6 +9,15 @@ import {
 /** Profile protocol families that map to a settings modelType value. */
 export type ProfileModelType = 'anthropic' | 'openai' | 'gemini' | 'grok'
 
+export type CustomModelDefinition =
+  | string
+  | {
+      value: string
+      label?: string
+      description?: string
+      contextWindow?: number
+    }
+
 /**
  * A named provider profile: a complete endpoint + model set that can be saved
  * and switched between, like opencode's provider config. When active, its
@@ -24,6 +33,7 @@ export type ProviderProfile = {
   haikuModel?: string
   sonnetModel?: string
   opusModel?: string
+  customModels?: CustomModelDefinition[]
 }
 
 /** All profiles actually stored in user settings (excluding the active id). */

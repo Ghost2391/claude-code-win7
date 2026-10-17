@@ -400,6 +400,36 @@ export const SettingsSchema = lazySchema(() =>
               .string()
               .optional()
               .describe('Model used for Opus-tier / heavy tasks'),
+            customModels: z
+              .array(
+                z.union([
+                  z
+                    .string()
+                    .describe('Model identifier passed through to the API'),
+                  z.object({
+                    value: z
+                      .string()
+                      .describe('Model identifier passed through to the API'),
+                    label: z
+                      .string()
+                      .optional()
+                      .describe('Display label in the model picker'),
+                    description: z
+                      .string()
+                      .optional()
+                      .describe('Short description in the model picker'),
+                    contextWindow: z
+                      .number()
+                      .optional()
+                      .describe('Context window size in tokens'),
+                  }),
+                ]),
+              )
+              .optional()
+              .describe(
+                'Additional custom models exposed under this profile. ' +
+                  'Accepts plain model id strings or objects with label/description/contextWindow.',
+              ),
           }),
         )
         .optional()

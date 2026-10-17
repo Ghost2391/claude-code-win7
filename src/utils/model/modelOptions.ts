@@ -13,7 +13,11 @@ import {
   COST_HAIKU_45,
   formatModelPricing,
 } from '../modelCost.js'
-import { getSettings_DEPRECATED } from '../settings/settings.js'
+import {
+  getInitialSettings,
+  getSettings_DEPRECATED,
+} from '../settings/settings.js'
+import type { CustomModelDefinition } from './providerProfiles.js'
 import { checkOpus1mAccess, checkSonnet1mAccess } from './check1mAccess.js'
 import { getAPIProvider } from './providers.js'
 import { isModelAllowed } from './modelAllowlist.js'
@@ -574,6 +578,38 @@ export function getModelOptions(fastMode = false): ModelOption[] {
   for (const opt of getGlobalConfig().additionalModelOptionsCache ?? []) {
     if (!options.some(existing => existing.value === opt.value)) {
       options.push(opt)
+    }
+  }
+
+  // Append customModels declared on the active ProviderProfile (or on all
+  // profiles when none is active), so arbitrary extra models show up in /model.
+  const settings = getInitialSettings()
+  const activeProfile = settings.providerProfiles?.find(
+    p => p.id === settings.activeProviderProfile,
+  )
+  const profilesToScan = activeProfile
+    ? [activeProfile]
+    : (settings.providerProfiles ?? [])
+  for (const profile of profilesToScan) {
+    for (const item of (profile.customModels ?? []) as CustomModelDefinition[]) {
+      const value = typeof item === 'string' ? item : item.value
+      if (!value || options.some(existing => existing.value === value)) {
+        continue
+      }
+      const label =
+        typeof item === 'string' ? value : (item.label ?? value)
+      const is1m = has1mContext(value)
+      const description =
+        typeof item === 'string'
+          ? `Custom model${is1m ? ' (1M context)' : ''}`
+          : (item.description ??
+            `Custom model${is1m ? ' (1M context)' : ''}`)
+      options.push({
+        value,
+        label,
+        description,
+        descriptionForModel: `${description} (${value})`,
+      })
     }
   }
 
