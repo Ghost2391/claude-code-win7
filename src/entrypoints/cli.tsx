@@ -33,6 +33,69 @@ if (isEnvTruthy(process.env.CLAUDE_CODE_FORCE_INTERACTIVE)) {
       }
     }
   }
+  // Initialize terminal size from env (piped streams have no columns/rows).
+  if (!process.stdout.columns) {
+    process.stdout.columns = parseInt(process.env.COLUMNS || '', 10) || 120;
+  }
+  if (!process.stdout.rows) {
+    process.stdout.rows = parseInt(process.env.LINES || '', 10) || 40;
+  }
+
+  // In piped interactive mode (e.g. `--web`), the browser sends resize
+  // requests through the parent process; the parent forwards them to our
+  // stdin as a CSI 8 ; rows ; cols t sequence. Strip it from the input
+  // stream and update stdout dimensions so Ink re-lays-out the UI.
+  const RESIZE_SEQUENCE = /\x1b\[8;(\d+);(\d+)t/g;
+  const updateDimensions = (rowsStr: string, colsStr: string) => {
+    const rows = parseInt(rowsStr, 10);
+    const cols = parseInt(colsStr, 10);
+    if (
+      cols > 0 &&
+      rows > 0 &&
+      (process.stdout.columns !== cols || process.stdout.rows !== rows)
+    ) {
+      process.stdout.columns = cols;
+      process.stdout.rows = rows;
+      process.stdout.emit('resize');
+    }
+  };
+  const stripResizeSequences = (chunk: unknown): unknown => {
+    const isBuffer = Buffer.isBuffer(chunk);
+    const str = isBuffer
+      ? (chunk as Buffer).toString('utf8')
+      : typeof chunk === 'string'
+        ? chunk
+        : '';
+    if (!str.includes('\x1b[8;')) return chunk;
+    const stripped = str.replace(RESIZE_SEQUENCE, (_match, rows, cols) => {
+      updateDimensions(rows, cols);
+      return '';
+    });
+    if (stripped.length === 0) return undefined;
+    return isBuffer ? Buffer.from(stripped, 'utf8') : stripped;
+  };
+
+  const originalRead = process.stdin.read.bind(process.stdin);
+  (process.stdin as any).read = function (size?: number) {
+    while (true) {
+      const chunk = originalRead(size);
+      if (chunk === null) return null;
+      const stripped = stripResizeSequences(chunk);
+      if (stripped === undefined) continue;
+      return stripped;
+    }
+  };
+
+  const originalEmit = process.stdin.emit.bind(process.stdin);
+  (process.stdin as any).emit = function (event: string, ...args: unknown[]) {
+    if (event === 'data' && args[0] !== undefined) {
+      const stripped = stripResizeSequences(args[0]);
+      if (stripped === undefined) return true;
+      args[0] = stripped;
+    }
+    return originalEmit(event, ...args);
+  };
+
   // Piped stdin lacks setRawMode; provide a no-op so TTY-dependent code paths
   // (Ink raw mode, REPL input) don't throw when isTTY was forced true.
   if (typeof process.stdin.setRawMode !== 'function') {

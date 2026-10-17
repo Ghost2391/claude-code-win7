@@ -107,8 +107,6 @@ const term = new Terminal({
     brightCyan: '#4dd0e1',
     brightWhite: '#ffffff',
   },
-  cols: 120,
-  rows: 40,
 });
 
 const fitAddon = new FitAddon.FitAddon();
@@ -117,6 +115,8 @@ term.open(document.getElementById('terminal-container'));
 
 let socket = null;
 let reconnectTimer = null;
+
+fitTerminal();
 
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -134,6 +134,7 @@ function connect() {
     statusText.textContent = 'Connected';
     statusText.className = 'connected';
     term.focus();
+    fitTerminal();
   };
 
   socket.onmessage = (event) => {
@@ -238,6 +239,9 @@ term.onTitleChange(title => {
 function fitTerminal() {
   try {
     fitAddon.fit();
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send('!resize:' + term.cols + ':' + term.rows);
+    }
   } catch {}
 }
 

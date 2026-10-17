@@ -159,7 +159,18 @@ export async function startWebServer(
           : Buffer.isBuffer(raw)
             ? raw.toString('utf-8')
             : ''
-      if (msg.startsWith('!resize:')) return
+      if (msg.startsWith('!resize:')) {
+        const parts = msg.slice('!resize:'.length).split(':')
+        const cols = parseInt(parts[0], 10)
+        const rows = parseInt(parts[1], 10)
+        if (cols > 0 && rows > 0 && child.stdin?.writable) {
+          try {
+            // Forward terminal resize: CSI 8 ; <rows> ; <cols> t
+            child.stdin.write(`\x1b[8;${rows};${cols}t`)
+          } catch {}
+        }
+        return
+      }
       if (child.stdin?.writable) {
         try {
           child.stdin.write(msg)
