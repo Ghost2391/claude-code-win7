@@ -7,7 +7,10 @@
 import { extname } from 'path'
 // Static import — dynamic import('highlight.js') fails in Bun --compile mode
 // because module resolution points to the internal bunfs binary path.
-import hljs from 'highlight.js'
+// Use lib/common (~37 languages) instead of the full bundle (~190): this
+// module only needs getLanguage() for display names, and the full bundle
+// costs ~1MB of parsed grammars at startup.
+import hljs from 'highlight.js/lib/common'
 
 export type CliHighlight = {
   highlight: typeof import('cli-highlight').highlight

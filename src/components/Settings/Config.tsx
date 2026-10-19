@@ -56,7 +56,13 @@ import { useIsInsideModal } from '../../context/modalContext.js';
 import { SearchBox } from '../SearchBox.js';
 import { isSupportedTerminal, hasAccessToIDEExtensionDiffFeature } from '../../utils/ide.js';
 import { getInitialSettings, getSettingsForSource, updateSettingsForSource } from '../../utils/settings/settings.js';
-import { getUserMsgOptIn, setUserMsgOptIn } from '../../bootstrap/state.js';
+import { getUserMsgOptIn, setUserMsgOptIn, setMainLoopModelOverride } from '../../bootstrap/state.js';
+import {
+  resolveProfileAndModel,
+  switchProfile,
+  getActiveProviderProfileId,
+} from '../../utils/model/providerProfiles.js';
+import { applyConfigEnvironmentVariables } from '../../utils/managedEnv.js';
 import { DEFAULT_OUTPUT_STYLE_NAME } from 'src/constants/outputStyles.js';
 import { isEnvTruthy, isRunningOnHomespace } from 'src/utils/envUtils.js';
 import type { LocalJSXCommandContext, CommandResultDisplay } from '../../commands.js';
@@ -260,15 +266,24 @@ export function Config({
       from_model: previousModel as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
       to_model: value as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
     });
+
+    const { profileId, modelName } = resolveProfileAndModel(value);
+    if (profileId && profileId !== getActiveProviderProfileId()) {
+      switchProfile(profileId);
+      applyConfigEnvironmentVariables();
+    }
+    const finalModel = modelName;
+    setMainLoopModelOverride(finalModel);
+
     setAppState(prev => ({
       ...prev,
-      mainLoopModel: value,
+      mainLoopModel: finalModel,
       mainLoopModelForSession: null,
     }));
     setChanges(prev => {
       const valStr =
-        modelDisplayString(value) +
-        (isBilledAsExtraUsage(value, false, isOpus1mMergeEnabled()) ? ' · Billed as extra usage' : '');
+        modelDisplayString(finalModel) +
+        (isBilledAsExtraUsage(finalModel, false, isOpus1mMergeEnabled()) ? ' · Billed as extra usage' : '');
       if ('model' in prev) {
         const { model, ...rest } = prev;
         return { ...rest, model: valStr };

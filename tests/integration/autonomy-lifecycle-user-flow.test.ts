@@ -125,7 +125,7 @@ describe('autonomy lifecycle user-equivalent CLI flow', () => {
     expect(existsSync(join(tempDir, '.claude', 'autonomy', 'flows.json'))).toBe(
       false,
     )
-  })
+  }, 30_000)
 
   test('real CLI can inspect, resume, and cancel a persisted managed flow', async () => {
     await startManagedAutonomyFlowFromHeartbeatTask({

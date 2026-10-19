@@ -220,18 +220,4 @@ export class Dispatcher {
       undefined,
     )
   }
-
-  /**
-   * Dispatch with continuous priority.
-   * For high-frequency events: resize, scroll, mouse move.
-   */
-  dispatchContinuous(target: EventTarget, event: TerminalEvent): boolean {
-    const previousPriority = this.currentUpdatePriority
-    try {
-      this.currentUpdatePriority = ContinuousEventPriority as number
-      return this.dispatch(target, event)
-    } finally {
-      this.currentUpdatePriority = previousPriority
-    }
-  }
 }

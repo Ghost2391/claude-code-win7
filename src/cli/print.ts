@@ -547,19 +547,18 @@ export async function runHeadless(
     proactiveModule.activateProactive('command')
   }
 
-  // Periodically run GC to keep memory usage in check.
-  // Uses a memory threshold to trigger a forced (major) GC when RSS grows
-  // beyond 350MB — the incremental GC may not reclaim enough during peaks
-  // (compact, long sessions with many mounted DOM nodes).
+  // Periodically run GC to keep memory usage in check. The idle baseline of
+  // this build is well above 350MB (code-split chunks + React/Ink), so a
+  // 350MB threshold forced a full collection every second for the entire
+  // session. Only step in well past the baseline, and less often — the
+  // incremental GC handles ordinary churn on its own.
   if (typeof Bun !== 'undefined') {
+    const GC_THRESHOLD_BYTES = 1024 * 1024 * 1024
     const gcTimer = setInterval(() => {
-      const rss = process.memoryUsage.rss()
-      if (rss > 350 * 1024 * 1024) {
+      if (process.memoryUsage.rss() > GC_THRESHOLD_BYTES) {
         Bun.gc(true)
-      } else {
-        Bun.gc(false)
       }
-    }, 1000)
+    }, 10_000)
     gcTimer.unref()
   }
 

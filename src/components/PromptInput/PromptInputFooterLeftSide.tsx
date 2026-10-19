@@ -94,14 +94,19 @@ function ProactiveCountdown(): React.ReactNode {
       return;
     }
 
+    let timer: ReturnType<typeof setTimeout> | undefined;
     function update(): void {
       const remaining = Math.max(0, Math.ceil((nextTickAt! - Date.now()) / 1000));
       setRemainingSeconds(remaining);
+      // Only the most significant unit is rendered, so coarse ticks are
+      // enough while more than a minute remains.
+      timer = setTimeout(update, remaining > 60 ? 5000 : 1000);
     }
 
     update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
+    return () => {
+      if (timer !== undefined) clearTimeout(timer);
+    };
   }, [nextTickAt]);
 
   if (remainingSeconds === null) return null;
@@ -112,14 +117,19 @@ function ProactiveCountdown(): React.ReactNode {
 /** Compact "goal (1h22min)" pill for the footer — colored by status. */
 function GoalElapsedIndicator(): React.ReactNode {
   const [tick, setTick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setTick(t => t + 1), GOAL_TICK_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, []);
-  void tick;
-
   const goalModule = require('../../services/goal/goalState.js') as typeof import('../../services/goal/goalState');
   const goal = goalModule.getGoal();
+  const isActive = goal?.status === 'active';
+
+  // Only tick while a goal is actually running. Without a goal this component
+  // previously re-rendered the footer once per second for the whole session.
+  useEffect(() => {
+    if (!isActive) return;
+    const id = setInterval(() => setTick(t => t + 1), GOAL_TICK_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [isActive]);
+  void tick;
+
   if (!goal) return null;
 
   const elapsedMs = goalModule.getActiveElapsedMs(goal);

@@ -400,6 +400,12 @@ export const SettingsSchema = lazySchema(() =>
               .string()
               .optional()
               .describe('Model used for Opus-tier / heavy tasks'),
+            contextWindow: z
+              .union([z.number(), z.string()])
+              .optional()
+              .describe(
+                'Default context window for all models under this profile, e.g. "128k", "200k", "1m" or number of tokens',
+              ),
             customModels: z
               .array(
                 z.union([
@@ -419,9 +425,11 @@ export const SettingsSchema = lazySchema(() =>
                       .optional()
                       .describe('Short description in the model picker'),
                     contextWindow: z
-                      .number()
+                      .union([z.number(), z.string()])
                       .optional()
-                      .describe('Context window size in tokens'),
+                      .describe(
+                        'Context window size in tokens, or a string like "128k", "200k", "1m"',
+                      ),
                   }),
                 ]),
               )
@@ -448,6 +456,12 @@ export const SettingsSchema = lazySchema(() =>
         .string()
         .optional()
         .describe('Override the default model used by Claude Code'),
+      contextWindow: z
+        .union([z.number(), z.string()])
+        .optional()
+        .describe(
+          'Override context window size in tokens, or a string like "128k", "200k", "1m"',
+        ),
       // Enterprise allowlist of models
       availableModels: z
         .array(z.string())

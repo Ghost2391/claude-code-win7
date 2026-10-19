@@ -20,10 +20,7 @@ import {
   type GitHubActionsMetadata,
   getUserForGrowthBook,
 } from '../../utils/user.js'
-import {
-  is1PEventLoggingEnabled,
-  logGrowthBookExperimentTo1P,
-} from './firstPartyEventLogger.js'
+import { logGrowthBookExperimentTo1P } from './firstPartyEventLogger.js'
 
 /**
  * User attributes sent to GrowthBook for targeting.
@@ -488,15 +485,16 @@ function getLocalGateDefault(feature: string): unknown | undefined {
 }
 
 /**
- * Check if GrowthBook operations should be enabled
+ * Check if GrowthBook operations should be enabled.
+ *
+ * Only the self-hosted adapter mode is honored. The default Anthropic-hosted
+ * endpoint is never contacted; when no adapter is configured the local gate
+ * defaults (LOCAL_GATE_DEFAULTS) are used instead.
  */
 function isGrowthBookEnabled(): boolean {
-  // 适配器模式：有自定义服务器配置时直接启用
-  if (process.env.CLAUDE_GB_ADAPTER_URL && process.env.CLAUDE_GB_ADAPTER_KEY) {
-    return true
-  }
-  // GrowthBook depends on 1P event logging.
-  return is1PEventLoggingEnabled()
+  return !!(
+    process.env.CLAUDE_GB_ADAPTER_URL && process.env.CLAUDE_GB_ADAPTER_KEY
+  )
 }
 
 /**

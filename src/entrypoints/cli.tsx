@@ -45,15 +45,12 @@ if (isEnvTruthy(process.env.CLAUDE_CODE_FORCE_INTERACTIVE)) {
   // requests through the parent process; the parent forwards them to our
   // stdin as a CSI 8 ; rows ; cols t sequence. Strip it from the input
   // stream and update stdout dimensions so Ink re-lays-out the UI.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: terminal escape sequence requires the ESC byte
   const RESIZE_SEQUENCE = /\x1b\[8;(\d+);(\d+)t/g;
   const updateDimensions = (rowsStr: string, colsStr: string) => {
     const rows = parseInt(rowsStr, 10);
     const cols = parseInt(colsStr, 10);
-    if (
-      cols > 0 &&
-      rows > 0 &&
-      (process.stdout.columns !== cols || process.stdout.rows !== rows)
-    ) {
+    if (cols > 0 && rows > 0 && (process.stdout.columns !== cols || process.stdout.rows !== rows)) {
       process.stdout.columns = cols;
       process.stdout.rows = rows;
       process.stdout.emit('resize');
@@ -61,11 +58,7 @@ if (isEnvTruthy(process.env.CLAUDE_CODE_FORCE_INTERACTIVE)) {
   };
   const stripResizeSequences = (chunk: unknown): unknown => {
     const isBuffer = Buffer.isBuffer(chunk);
-    const str = isBuffer
-      ? (chunk as Buffer).toString('utf8')
-      : typeof chunk === 'string'
-        ? chunk
-        : '';
+    const str = isBuffer ? (chunk as Buffer).toString('utf8') : typeof chunk === 'string' ? chunk : '';
     if (!str.includes('\x1b[8;')) return chunk;
     const stripped = str.replace(RESIZE_SEQUENCE, (_match, rows, cols) => {
       updateDimensions(rows, cols);

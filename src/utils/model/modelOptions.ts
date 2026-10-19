@@ -581,34 +581,97 @@ export function getModelOptions(fastMode = false): ModelOption[] {
     }
   }
 
-  // Append customModels declared on the active ProviderProfile (or on all
-  // profiles when none is active), so arbitrary extra models show up in /model.
+  // Append customModels declared on the active ProviderProfile, plus all models
+  // from other saved provider profiles so the user can freely switch between
+  // providers directly from /model without running /login first (like OpenCode).
   const settings = getInitialSettings()
-  const activeProfile = settings.providerProfiles?.find(
-    p => p.id === settings.activeProviderProfile,
-  )
-  const profilesToScan = activeProfile
-    ? [activeProfile]
-    : (settings.providerProfiles ?? [])
-  for (const profile of profilesToScan) {
-    for (const item of (profile.customModels ?? []) as CustomModelDefinition[]) {
+  const activeId = settings.activeProviderProfile
+  const allProfiles = settings.providerProfiles ?? []
+  const activeProfile = allProfiles.find(p => p.id === activeId)
+
+  if (activeProfile) {
+    for (const item of (activeProfile.customModels ??
+      []) as CustomModelDefinition[]) {
       const value = typeof item === 'string' ? item : item.value
       if (!value || options.some(existing => existing.value === value)) {
         continue
       }
-      const label =
-        typeof item === 'string' ? value : (item.label ?? value)
+      const label = typeof item === 'string' ? value : (item.label ?? value)
       const is1m = has1mContext(value)
       const description =
         typeof item === 'string'
           ? `Custom model${is1m ? ' (1M context)' : ''}`
-          : (item.description ??
-            `Custom model${is1m ? ' (1M context)' : ''}`)
+          : (item.description ?? `Custom model${is1m ? ' (1M context)' : ''}`)
       options.push({
         value,
         label,
         description,
         descriptionForModel: `${description} (${value})`,
+      })
+    }
+  }
+
+  // Models from other saved provider profiles: carry an explicit `profile:<id>:<model>`
+  // value so picking them switches provider profile automatically.
+  for (const profile of allProfiles) {
+    if (activeProfile && profile.id === activeProfile.id) continue
+
+    type CandidateModel = {
+      value: string
+      label?: string
+      description?: string
+    }
+    const candidates: CandidateModel[] = []
+
+    if (profile.sonnetModel) {
+      candidates.push({
+        value: profile.sonnetModel,
+        description: 'Default Sonnet model',
+      })
+    }
+    if (profile.opusModel) {
+      candidates.push({
+        value: profile.opusModel,
+        description: 'Default Opus model',
+      })
+    }
+    if (profile.haikuModel) {
+      candidates.push({
+        value: profile.haikuModel,
+        description: 'Default Haiku model',
+      })
+    }
+    for (const item of (profile.customModels ??
+      []) as CustomModelDefinition[]) {
+      const value = typeof item === 'string' ? item : item.value
+      if (value) {
+        candidates.push({
+          value,
+          label: typeof item === 'string' ? value : item.label,
+          description:
+            typeof item === 'string' ? 'Custom model' : item.description,
+        })
+      }
+    }
+
+    const seenInProfile = new Set<string>()
+    for (const c of candidates) {
+      const rawVal = c.value
+      if (!rawVal || seenInProfile.has(rawVal)) continue
+      seenInProfile.add(rawVal)
+
+      const optValue = `profile:${profile.id}:${rawVal}`
+      const label = c.label ?? rawVal
+      const is1m = has1mContext(rawVal)
+      const baseDesc =
+        c.description ?? `Custom model${is1m ? ' (1M context)' : ''}`
+      const description = `${profile.name} · ${baseDesc}`
+
+      options.push({
+        value: optValue,
+        label,
+        description,
+        descriptionForModel: `${description} (${rawVal})`,
       })
     }
   }
@@ -623,7 +686,15 @@ export function getModelOptions(fastMode = false): ModelOption[] {
   } else if (initialMainLoopModel !== null) {
     customModel = initialMainLoopModel
   }
-  if (customModel === null || options.some(opt => opt.value === customModel)) {
+  const isCustomModelPresent =
+    customModel === null ||
+    options.some(
+      opt =>
+        opt.value === customModel ||
+        (typeof opt.value === 'string' &&
+          opt.value.endsWith(`:${customModel}`)),
+    )
+  if (customModel === null || isCustomModelPresent) {
     return filterModelOptionsByAllowlist(options)
   } else if (customModel === 'opusplan') {
     return filterModelOptionsByAllowlist([...options, getOpusPlanOption()])
@@ -663,8 +734,12 @@ function filterModelOptionsByAllowlist(options: ModelOption[]): ModelOption[] {
   if (!settings.availableModels) {
     return options // No restrictions
   }
-  return options.filter(
-    opt =>
-      opt.value === null || (opt.value !== null && isModelAllowed(opt.value)),
-  )
+  return options.filter(opt => {
+    if (opt.value === null) return true
+    const clean =
+      typeof opt.value === 'string'
+        ? opt.value.replace(/^profile:[^:]+:/, '')
+        : opt.value
+    return isModelAllowed(clean)
+  })
 }

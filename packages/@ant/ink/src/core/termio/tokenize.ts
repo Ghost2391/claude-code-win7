@@ -179,9 +179,10 @@ function tokenize(
           result.state = 'escape'
           i++
         } else {
-          // Invalid - treat ESC as text
-          result.state = 'ground'
-          textStart = seqStart
+          // Malformed sequence: emit the ESC prefix as a sequence (dropped
+          // downstream) so the raw control byte never leaks into text. The
+          // current byte is rescanned as text from textStart = i.
+          emitSequence(data.slice(seqStart, i))
         }
         break
 
@@ -195,9 +196,9 @@ function tokenize(
           i++
           emitSequence(data.slice(seqStart, i))
         } else {
-          // Invalid - treat as text
-          result.state = 'ground'
-          textStart = seqStart
+          // Malformed sequence: drop the ESC + intermediate prefix instead of
+          // leaking it into text; rescan the current byte as text.
+          emitSequence(data.slice(seqStart, i))
         }
         break
 
@@ -249,9 +250,9 @@ function tokenize(
         } else if (isCSIParam(code) || isCSIIntermediate(code)) {
           i++
         } else {
-          // Invalid CSI - abort, treat as text
-          result.state = 'ground'
-          textStart = seqStart
+          // Invalid CSI: drop the ESC [ ... prefix instead of leaking it into
+          // text; rescan the current byte as text.
+          emitSequence(data.slice(seqStart, i))
         }
         break
 
@@ -261,9 +262,9 @@ function tokenize(
           i++
           emitSequence(data.slice(seqStart, i))
         } else {
-          // Invalid - treat as text
-          result.state = 'ground'
-          textStart = seqStart
+          // Invalid SS3: drop the ESC O prefix instead of leaking it into
+          // text; rescan the current byte as text.
+          emitSequence(data.slice(seqStart, i))
         }
         break
 

@@ -116,6 +116,13 @@ import { getFastIconString } from '../FastIcon.js';
 import { GlobalSearchDialog } from '../GlobalSearchDialog.js';
 import { HistorySearchDialog } from '../HistorySearchDialog.js';
 import { ModelPicker } from '../ModelPicker.js';
+import { setMainLoopModelOverride } from '../../bootstrap/state.js';
+import {
+  resolveProfileAndModel,
+  switchProfile,
+  getActiveProviderProfileId,
+} from '../../utils/model/providerProfiles.js';
+import { applyConfigEnvironmentVariables } from '../../utils/managedEnv.js';
 import { QuickOpenDialog } from '../QuickOpenDialog.js';
 import TextInput from '../TextInput.js';
 import { ThinkingToggle } from '../ThinkingToggle.js';
@@ -2158,12 +2165,22 @@ function PromptInput({
   // from visually "jumping" when notifications arrive.
   const handleModelSelect = useCallback(
     (model: string | null, _effort: EffortLevel | undefined) => {
+      const { profileId, modelName, profile } = resolveProfileAndModel(model);
+      let switchedProfile = false;
+      if (profileId && profileId !== getActiveProviderProfileId()) {
+        switchProfile(profileId);
+        applyConfigEnvironmentVariables();
+        switchedProfile = true;
+      }
+      const finalModel = modelName;
+      setMainLoopModelOverride(finalModel);
+
       let wasFastModeDisabled = false;
       setAppState(prev => {
-        wasFastModeDisabled = isFastModeEnabled() && !isFastModeSupportedByModel(model) && !!prev.fastMode;
+        wasFastModeDisabled = isFastModeEnabled() && !isFastModeSupportedByModel(finalModel) && !!prev.fastMode;
         return {
           ...prev,
-          mainLoopModel: model,
+          mainLoopModel: finalModel,
           mainLoopModelForSession: null,
           // Turn off fast mode if switching to a model that doesn't support it
           ...(wasFastModeDisabled && { fastMode: false }),
@@ -2171,8 +2188,11 @@ function PromptInput({
       });
       setShowModelPicker(false);
       const effectiveFastMode = (isFastMode ?? false) && !wasFastModeDisabled;
-      let message = `Model set to ${modelDisplayString(model)}`;
-      if (isBilledAsExtraUsage(model, effectiveFastMode, isOpus1mMergeEnabled())) {
+      let message =
+        switchedProfile && profile
+          ? `Switched to ${profile.name} · Model set to ${modelDisplayString(finalModel)}`
+          : `Model set to ${modelDisplayString(finalModel)}`;
+      if (isBilledAsExtraUsage(finalModel, effectiveFastMode, isOpus1mMergeEnabled())) {
         message += ' · Billed as extra usage';
       }
       if (wasFastModeDisabled) {
@@ -2185,7 +2205,7 @@ function PromptInput({
         timeoutMs: 3000,
       });
       logEvent('tengu_model_picker_hotkey', {
-        model: model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+        model: finalModel as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
       });
     },
     [setAppState, addNotification, isFastMode],

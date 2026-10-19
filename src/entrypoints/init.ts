@@ -58,8 +58,6 @@ import { initUser } from '../utils/user.js'
 import { initLangfuse, shutdownLangfuse } from '../services/langfuse/index.js'
 import { setThemeConfigCallbacks } from '@anthropic/ink'
 
-// initialize1PEventLogging is dynamically imported to defer OpenTelemetry sdk-logs/resources
-
 // Track if telemetry has been initialized to prevent double initialization
 let telemetryInitialized = false
 
@@ -101,23 +99,7 @@ export const init = memoize(async (): Promise<void> => {
     setupGracefulShutdown()
     profileCheckpoint('init_after_graceful_shutdown')
 
-    // Initialize 1P event logging (no security concerns, but deferred to avoid
-    // loading OpenTelemetry sdk-logs at startup). growthbook.js is already in
-    // the module cache by this point (firstPartyEventLogger imports it), so the
-    // second dynamic import adds no load cost.
-    void Promise.all([
-      import('../services/analytics/firstPartyEventLogger.js'),
-      import('../services/analytics/growthbook.js'),
-    ]).then(([fp, gb]) => {
-      fp.initialize1PEventLogging()
-      // Rebuild the logger provider if tengu_1p_event_batch_config changes
-      // mid-session. Change detection (isEqual) is inside the handler so
-      // unchanged refreshes are no-ops.
-      gb.onGrowthBookRefresh(() => {
-        void fp.reinitialize1PEventLoggingIfConfigChanged()
-      })
-    })
-    profileCheckpoint('init_after_1p_event_logging')
+    // 1P event logging is disabled in this fork — no exporter is initialized.
 
     // Start balance polling (no-op unless a provider is configured via env).
     void import('../services/providerUsage/balance/poller.js').then(m =>

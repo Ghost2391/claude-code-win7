@@ -26,6 +26,13 @@ import {
 } from '../../utils/model/model.js';
 import { isModelAllowed } from '../../utils/model/modelAllowlist.js';
 import { validateModel } from '../../utils/model/validateModel.js';
+import { setMainLoopModelOverride } from '../../bootstrap/state.js';
+import {
+  resolveProfileAndModel,
+  switchProfile,
+  getActiveProviderProfileId,
+} from '../../utils/model/providerProfiles.js';
+import { applyConfigEnvironmentVariables } from '../../utils/managedEnv.js';
 
 function ModelPickerWrapper({
   onDone,
@@ -53,13 +60,27 @@ function ModelPickerWrapper({
       from_model: mainLoopModel as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
       to_model: model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
     });
+
+    const { profileId, modelName, profile } = resolveProfileAndModel(model);
+    let switchedProfile = false;
+    if (profileId && profileId !== getActiveProviderProfileId()) {
+      switchProfile(profileId);
+      applyConfigEnvironmentVariables();
+      switchedProfile = true;
+    }
+
+    const finalModel = modelName;
+    setMainLoopModelOverride(finalModel);
     setAppState(prev => ({
       ...prev,
-      mainLoopModel: model,
+      mainLoopModel: finalModel,
       mainLoopModelForSession: null,
     }));
 
-    let message = `Set model to ${chalk.bold(renderModelLabel(model))}`;
+    let message =
+      switchedProfile && profile
+        ? `Switched provider to ${chalk.bold(profile.name)} · Set model to ${chalk.bold(renderModelLabel(finalModel))}`
+        : `Set model to ${chalk.bold(renderModelLabel(finalModel))}`;
     if (effort !== undefined) {
       message += ` with ${chalk.bold(effort)} effort`;
     }
@@ -68,20 +89,20 @@ function ModelPickerWrapper({
     let wasFastModeToggledOn;
     if (isFastModeEnabled()) {
       clearFastModeCooldown();
-      if (!isFastModeSupportedByModel(model) && isFastMode) {
+      if (!isFastModeSupportedByModel(finalModel) && isFastMode) {
         setAppState(prev => ({
           ...prev,
           fastMode: false,
         }));
         wasFastModeToggledOn = false;
         // Do not update fast mode in settings since this is an automatic downgrade
-      } else if (isFastModeSupportedByModel(model) && isFastModeAvailable() && isFastMode) {
+      } else if (isFastModeSupportedByModel(finalModel) && isFastModeAvailable() && isFastMode) {
         message += ` · Fast mode ON`;
         wasFastModeToggledOn = true;
       }
     }
 
-    if (isBilledAsExtraUsage(model, wasFastModeToggledOn === true, isOpus1mMergeEnabled())) {
+    if (isBilledAsExtraUsage(finalModel, wasFastModeToggledOn === true, isOpus1mMergeEnabled())) {
       message += ` · Billed as extra usage`;
     }
 
@@ -120,15 +141,24 @@ function SetModelAndClose({
 
   React.useEffect(() => {
     async function handleModelChange(): Promise<void> {
-      if (model && !isModelAllowed(model)) {
-        onDone(`Model '${model}' is not available. Your organization restricts model selection.`, {
+      const { profileId, modelName: resolvedModelName, profile } = resolveProfileAndModel(model);
+      let switchedProfile = false;
+      if (profileId && profileId !== getActiveProviderProfileId()) {
+        switchProfile(profileId);
+        applyConfigEnvironmentVariables();
+        switchedProfile = true;
+      }
+      const effectiveModel = resolvedModelName;
+
+      if (effectiveModel && !isModelAllowed(effectiveModel)) {
+        onDone(`Model '${effectiveModel}' is not available. Your organization restricts model selection.`, {
           display: 'system',
         });
         return;
       }
 
       // @[MODEL LAUNCH]: Update check for 1M access.
-      if (model && isOpus1mUnavailable(model)) {
+      if (effectiveModel && isOpus1mUnavailable(effectiveModel)) {
         onDone(
           `Opus 4.7 with 1M context is not available for your account. Learn more: https://code.claude.com/docs/en/model-config#extended-context-with-1m`,
           { display: 'system' },
@@ -136,7 +166,7 @@ function SetModelAndClose({
         return;
       }
 
-      if (model && isSonnet1mUnavailable(model)) {
+      if (effectiveModel && isSonnet1mUnavailable(effectiveModel)) {
         onDone(
           `Sonnet 4.6 with 1M context is not available for your account. Learn more: https://code.claude.com/docs/en/model-config#extended-context-with-1m`,
           { display: 'system' },
@@ -145,14 +175,14 @@ function SetModelAndClose({
       }
 
       // Skip validation for default model
-      if (!model) {
+      if (!effectiveModel) {
         setModel(null);
         return;
       }
 
       // Skip validation for known aliases - they're predefined and should work
-      if (isKnownAlias(model)) {
-        setModel(model);
+      if (isKnownAlias(effectiveModel)) {
+        setModel(effectiveModel);
         return;
       }
 
@@ -160,12 +190,12 @@ function SetModelAndClose({
       try {
         // Don't use parseUserSpecifiedModel for non-aliases since it lowercases the input
         // and model names are case-sensitive
-        const { valid, error } = await validateModel(model);
+        const { valid, error } = await validateModel(effectiveModel);
 
         if (valid) {
-          setModel(model);
+          setModel(effectiveModel);
         } else {
-          onDone(error || `Model '${model}' not found`, {
+          onDone(error || `Model '${effectiveModel}' not found`, {
             display: 'system',
           });
         }
@@ -174,42 +204,46 @@ function SetModelAndClose({
           display: 'system',
         });
       }
-    }
 
-    function setModel(modelValue: string | null): void {
-      setAppState(prev => ({
-        ...prev,
-        mainLoopModel: modelValue,
-        mainLoopModelForSession: null,
-      }));
-      let message = `Set model to ${chalk.bold(renderModelLabel(modelValue))}`;
+      function setModel(modelValue: string | null): void {
+        setMainLoopModelOverride(modelValue);
+        setAppState(prev => ({
+          ...prev,
+          mainLoopModel: modelValue,
+          mainLoopModelForSession: null,
+        }));
+        let message =
+          switchedProfile && profile
+            ? `Switched provider to ${chalk.bold(profile.name)} · Set model to ${chalk.bold(renderModelLabel(modelValue))}`
+            : `Set model to ${chalk.bold(renderModelLabel(modelValue))}`;
 
-      let wasFastModeToggledOn;
-      if (isFastModeEnabled()) {
-        clearFastModeCooldown();
-        if (!isFastModeSupportedByModel(modelValue) && isFastMode) {
-          setAppState(prev => ({
-            ...prev,
-            fastMode: false,
-          }));
-          wasFastModeToggledOn = false;
-          // Do not update fast mode in settings since this is an automatic downgrade
-        } else if (isFastModeSupportedByModel(modelValue) && isFastMode) {
-          message += ` · Fast mode ON`;
-          wasFastModeToggledOn = true;
+        let wasFastModeToggledOn;
+        if (isFastModeEnabled()) {
+          clearFastModeCooldown();
+          if (!isFastModeSupportedByModel(modelValue) && isFastMode) {
+            setAppState(prev => ({
+              ...prev,
+              fastMode: false,
+            }));
+            wasFastModeToggledOn = false;
+            // Do not update fast mode in settings since this is an automatic downgrade
+          } else if (isFastModeSupportedByModel(modelValue) && isFastMode) {
+            message += ` · Fast mode ON`;
+            wasFastModeToggledOn = true;
+          }
         }
-      }
 
-      if (isBilledAsExtraUsage(modelValue, wasFastModeToggledOn === true, isOpus1mMergeEnabled())) {
-        message += ` · Billed as extra usage`;
-      }
+        if (isBilledAsExtraUsage(modelValue, wasFastModeToggledOn === true, isOpus1mMergeEnabled())) {
+          message += ` · Billed as extra usage`;
+        }
 
-      if (wasFastModeToggledOn === false) {
-        // Fast mode was toggled off, show suffix after extra usage billing
-        message += ` · Fast mode OFF`;
-      }
+        if (wasFastModeToggledOn === false) {
+          // Fast mode was toggled off, show suffix after extra usage billing
+          message += ` · Fast mode OFF`;
+        }
 
-      onDone(message);
+        onDone(message);
+      }
     }
 
     void handleModelChange();

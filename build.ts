@@ -3,6 +3,7 @@ import { join, resolve } from 'path'
 import { getMacroDefines } from './scripts/defines.ts'
 import { DEFAULT_BUILD_FEATURES } from './scripts/defines.ts'
 import { generateEmbeddedWebAssets } from './scripts/embedWebAssets.ts'
+import { patchNodeCompat } from './scripts/patchNodeCompat.ts'
 
 const outdir = 'dist'
 
@@ -41,50 +42,7 @@ if (!result.success) {
   process.exit(1)
 }
 
-// Step 3: Post-process — replace Bun-only `import.meta.require` with Node.js compatible version
-const files = await readdir(outdir)
-const IMPORT_META_REQUIRE = 'var __require = import.meta.require;'
-const COMPAT_REQUIRE =
-  'var __require = typeof import.meta.require === "function" ? import.meta.require : (await import("module")).createRequire(import.meta.url);'
-
-let patched = 0
-for (const file of files) {
-  if (!file.endsWith('.js')) continue
-  const filePath = join(outdir, file)
-  const content = await readFile(filePath, 'utf-8')
-  if (content.includes(IMPORT_META_REQUIRE)) {
-    await writeFile(
-      filePath,
-      content.replace(IMPORT_META_REQUIRE, COMPAT_REQUIRE),
-    )
-    patched++
-  }
-}
-
-// Patch unguarded globalThis.Bun destructuring from third-party deps
-let bunPatched = 0
-const BUN_DESTRUCTURE = /var \{([^}]+)\} = globalThis\.Bun;?/g
-const BUN_DESTRUCTURE_SAFE =
-  'var {$1} = typeof globalThis.Bun !== "undefined" ? globalThis.Bun : {};'
-for (const file of files) {
-  if (!file.endsWith('.js')) continue
-  const filePath = join(outdir, file)
-  const content = await readFile(filePath, 'utf-8')
-  if (BUN_DESTRUCTURE.test(content)) {
-    await writeFile(
-      filePath,
-      content.replace(BUN_DESTRUCTURE, BUN_DESTRUCTURE_SAFE),
-    )
-    bunPatched++
-  }
-}
-BUN_DESTRUCTURE.lastIndex = 0
-
-console.log(
-  `Bundled ${result.outputs.length} files (patched ${patched} import.meta.require, ${bunPatched} Bun destructure)`,
-)
-
-// Step 4: Organize — move chunk files into dist/chunks/ subdirectory.
+// Step 3: Organize — move chunk files into dist/chunks/ subdirectory.
 // Bun produces all chunks flat in outdir; moving them keeps the dist root
 // clean: only cli.js, cli-bun.js, cli-node.js, and claude.cmd at top level.
 const chunksDir = join(outdir, 'chunks')
@@ -92,8 +50,8 @@ await mkdir(chunksDir, { recursive: true })
 
 const CHUNK_RE = /^chunk-[a-z0-9]+\.js$/
 let chunksMoved = 0
-const currentFiles = await readdir(outdir)
-for (const file of currentFiles) {
+const files = await readdir(outdir)
+for (const file of files) {
   if (!CHUNK_RE.test(file)) continue
   await rename(join(outdir, file), join(chunksDir, file))
   chunksMoved++
@@ -107,6 +65,13 @@ cliContent = cliContent.replace(IMPORT_CHUNK_RE, '$1./chunks/$2$1')
 await writeFile(cliPath, cliContent)
 
 console.log(`Organized ${chunksMoved} chunks → ${chunksDir}/`)
+
+// Step 4: Node.js compatibility patches (import.meta.require, globalThis.Bun).
+// Runs recursively so both the entry chunks and dist/chunks are covered.
+const patchStats = await patchNodeCompat(outdir)
+console.log(
+  `Bundled ${result.outputs.length} files (patched ${patchStats.importMetaRequire} import.meta.require, ${patchStats.bunDestructure} Bun destructure across ${patchStats.files} files)`,
+)
 
 // Step 5: Copy vendored npm dependencies (externalized by Bun build)
 const npmModulesDir = join(outdir, 'node_modules')

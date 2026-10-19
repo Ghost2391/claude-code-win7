@@ -55,14 +55,39 @@ export const getRipgrepConfig = memoize((): RipgrepConfig => {
     }
   }
 
-  const rgRoot = path.resolve(__dirname, 'vendor', 'ripgrep')
-  const command =
-    process.platform === 'win32'
-      ? path.resolve(rgRoot, `${process.arch}-win32`, 'rg.exe')
-      : path.resolve(rgRoot, `${process.arch}-${process.platform}`, 'rg')
-
-  return resolveBuiltinWithFallback(command)
+  const rgRoot = resolveRipgrepRoot()
+  return resolveBuiltinWithFallback(vendoredRipgrepPath(rgRoot))
 })
+
+/**
+ * Locate the vendored ripgrep directory.
+ *
+ * Builds copy `src/utils/vendor/ripgrep` next to the entrypoint
+ * (`dist/vendor/ripgrep`, or the executable directory for compiled binaries),
+ * while dev mode runs from the repo root — where the source tree path is the
+ * only one that exists. Check both instead of assuming one layout.
+ */
+function resolveRipgrepRoot(): string {
+  const candidates = [
+    path.resolve(__dirname, 'vendor', 'ripgrep'),
+    path.resolve(__dirname, 'src', 'utils', 'vendor', 'ripgrep'),
+  ]
+  return candidates.find(dir => existsSync(dir)) ?? candidates[0]!
+}
+
+/**
+ * Path to the vendored ripgrep binary. Only x64-win32 is shipped, but Windows
+ * on ARM runs x64 binaries under emulation — prefer that over silently
+ * falling back to a system rg that may not be installed.
+ */
+function vendoredRipgrepPath(rgRoot: string): string {
+  if (process.platform === 'win32') {
+    const native = path.resolve(rgRoot, `${process.arch}-win32`, 'rg.exe')
+    if (existsSync(native)) return native
+    return path.resolve(rgRoot, 'x64-win32', 'rg.exe')
+  }
+  return path.resolve(rgRoot, `${process.arch}-${process.platform}`, 'rg')
+}
 
 /**
  * Pure function: decide what to do when the builtin rg binary may be missing.

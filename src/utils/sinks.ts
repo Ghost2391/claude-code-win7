@@ -1,16 +1,15 @@
 import { initializeErrorLogSink } from './errorLogSink.js'
-import { initializeAnalyticsSink } from '../services/analytics/sink.js'
 
 /**
- * Attach error log and analytics sinks, draining any events queued before
- * attachment. Both inits are idempotent. Called from setup() for the default
- * command; other entrypoints (subcommands, daemon, bridge) call this directly
- * since they bypass setup().
+ * Attach the local error log sink. Idempotent. Called from setup() for the
+ * default command; other entrypoints (subcommands, daemon, bridge) call this
+ * directly since they bypass setup().
+ *
+ * Remote analytics/telemetry sinks are intentionally not attached.
  *
  * Leaf module — kept out of setup.ts to avoid the setup → commands → bridge
  * → setup import cycle.
  */
 export function initSinks(): void {
   initializeErrorLogSink()
-  initializeAnalyticsSink()
 }

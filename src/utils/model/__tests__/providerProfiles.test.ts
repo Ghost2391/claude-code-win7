@@ -3,12 +3,6 @@ import { logMock } from '../../../../tests/mocks/log.js'
 
 mock.module('src/utils/log.ts', logMock)
 mock.module('bun:bundle', () => ({ feature: () => false }))
-mock.module('src/services/api/openai/client.js', () => ({
-  clearOpenAIClientCache: () => {},
-}))
-mock.module('src/services/api/grok/client.js', () => ({
-  clearGrokClientCache: () => {},
-}))
 
 let stored: Record<string, unknown> = {}
 mock.module('src/utils/settings/settings.js', () => ({
@@ -159,6 +153,28 @@ describe('providerProfiles', () => {
     expect(getActiveProviderProfile()).toBeUndefined()
   })
 
+  test('getProfileDefaultModel picks sonnet, then opus, haiku, customModels', async () => {
+    const { getProfileDefaultModel } = await import('../providerProfiles.js')
+    const base = { id: 'p', name: 'P', modelType: 'openai' as const }
+    expect(
+      getProfileDefaultModel({
+        ...base,
+        sonnetModel: 's',
+        opusModel: 'o',
+        haikuModel: 'h',
+      }),
+    ).toBe('s')
+    expect(
+      getProfileDefaultModel({ ...base, opusModel: 'o', haikuModel: 'h' }),
+    ).toBe('o')
+    expect(getProfileDefaultModel({ ...base, haikuModel: 'h' })).toBe('h')
+    expect(getProfileDefaultModel({ ...base, customModels: ['m'] })).toBe('m')
+    expect(
+      getProfileDefaultModel({ ...base, customModels: [{ value: 'v' }] }),
+    ).toBe('v')
+    expect(getProfileDefaultModel(base)).toBeUndefined()
+  })
+
   test('deactivateProviderProfile clears the active id', async () => {
     const {
       saveProviderProfile,
@@ -171,5 +187,85 @@ describe('providerProfiles', () => {
     expect(getActiveProviderProfileId()).toBe(id)
     deactivateProviderProfile()
     expect(getActiveProviderProfileId()).toBeUndefined()
+  })
+
+  test('resolveProfileAndModel resolves explicit profile prefix', async () => {
+    const { saveProviderProfile, resolveProfileAndModel } = await import(
+      '../providerProfiles.js'
+    )
+    const id = saveProviderProfile({
+      name: 'DeepSeek',
+      modelType: 'openai',
+      sonnetModel: 'deepseek-chat',
+    })
+    const res = resolveProfileAndModel(`profile:${id}:deepseek-chat`)
+    expect(res.profileId).toBe(id)
+    expect(res.modelName).toBe('deepseek-chat')
+    expect(res.profile?.name).toBe('DeepSeek')
+  })
+
+  test('resolveProfileAndModel resolves bare model belonging to another profile', async () => {
+    const {
+      saveProviderProfile,
+      activateProviderProfile,
+      resolveProfileAndModel,
+    } = await import('../providerProfiles.js')
+    const p1 = saveProviderProfile({
+      name: 'Profile1',
+      modelType: 'openai',
+      sonnetModel: 'p1-sonnet',
+    })
+    const p2 = saveProviderProfile({
+      name: 'Profile2',
+      modelType: 'openai',
+      sonnetModel: 'p2-sonnet',
+      customModels: ['p2-custom'],
+    })
+    activateProviderProfile(p1)
+
+    // Asking for a model belonging to p2 should resolve p2
+    const res = resolveProfileAndModel('p2-custom')
+    expect(res.profileId).toBe(p2)
+    expect(res.modelName).toBe('p2-custom')
+    expect(res.profile?.name).toBe('Profile2')
+
+    // Asking for a model belonging to p1 should resolve p1
+    const res1 = resolveProfileAndModel('p1-sonnet')
+    expect(res1.profileId).toBe(p1)
+    expect(res1.modelName).toBe('p1-sonnet')
+  })
+
+  test('resolveProfileAndModel resolves by profile id or profile name', async () => {
+    const { saveProviderProfile, resolveProfileAndModel } = await import(
+      '../providerProfiles.js'
+    )
+    const id = saveProviderProfile({
+      name: 'MyDeepSeek',
+      modelType: 'openai',
+      sonnetModel: 'deepseek-v4',
+    })
+    const resById = resolveProfileAndModel(id)
+    expect(resById.profileId).toBe(id)
+    expect(resById.modelName).toBe('deepseek-v4')
+
+    const resByName = resolveProfileAndModel('mydeepseek')
+    expect(resByName.profileId).toBe(id)
+    expect(resByName.modelName).toBe('deepseek-v4')
+  })
+
+  test('switchProfile activates the profile and materializes its env', async () => {
+    const { saveProviderProfile, switchProfile, getActiveProviderProfileId } =
+      await import('../providerProfiles.js')
+    const id = saveProviderProfile({
+      name: 'SwitchTarget',
+      modelType: 'openai',
+      baseURL: 'https://switched.example.com',
+      apiKey: 'sk-switched',
+    })
+    const switched = switchProfile(id)
+    expect(switched?.name).toBe('SwitchTarget')
+    expect(getActiveProviderProfileId()).toBe(id)
+    expect(process.env.OPENAI_BASE_URL).toBe('https://switched.example.com')
+    expect(process.env.OPENAI_API_KEY).toBe('sk-switched')
   })
 })

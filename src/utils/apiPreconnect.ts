@@ -24,7 +24,7 @@
  */
 
 import { getOauthConfig } from '../constants/oauth.js'
-import { isEnvTruthy } from './envUtils.js'
+import { getAPIProvider } from './model/providers.js'
 import { isEssentialTrafficOnly } from './privacyLevel.js'
 
 let fired = false
@@ -37,12 +37,10 @@ export function preconnectAnthropicApi(): void {
   // CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC / DISABLE_TELEMETRY / proxy env.
   if (isEssentialTrafficOnly()) return
 
-  // Skip if using a cloud provider — different endpoint + auth
-  if (
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_BEDROCK) ||
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_VERTEX) ||
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_FOUNDRY)
-  ) {
+  // Skip unless talking to the first-party API — other providers use a
+  // different endpoint + auth, and preconnecting to Anthropic would be a
+  // pointless outbound connection when a compatibility layer is active.
+  if (getAPIProvider() !== 'firstParty') {
     return
   }
   // Skip if proxy/mTLS/unix — SDK's custom dispatcher won't reuse this pool

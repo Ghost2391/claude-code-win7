@@ -93,11 +93,13 @@ function CachePill({ messages }: CachePillProps): React.ReactNode {
   const elapsedMin = elapsed !== null ? elapsed / 60_000 : null;
   const isExpired = remaining !== null && remaining <= 0;
 
-  // 1-second countdown ticker
+  // 1-second countdown ticker — only while a countdown is actually displayed
+  // (no cached usage / already expired needs no re-render).
   useEffect(() => {
+    if (lastResetAt === null || isExpired) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [lastResetAt, isExpired]);
 
   // 500ms flash in last 5 minutes
   const inFlashZone = elapsedMin !== null && elapsedMin >= 55 && !isExpired;

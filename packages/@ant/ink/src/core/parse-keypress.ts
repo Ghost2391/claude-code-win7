@@ -719,6 +719,11 @@ function parseKeypress(s: string = ''): ParsedKey {
   } else if (s === '\x1f') {
     key.name = '_'
     key.ctrl = true
+  } else if (s === '\x00') {
+    // Ctrl+Space is reported as NUL. Without this branch the generic
+    // control-char mapping below turns it into the backtick key.
+    key.name = 'space'
+    key.ctrl = true
   } else if (s <= '\x1a' && s.length === 1) {
     key.name = String.fromCharCode(s.charCodeAt(0) + 'a'.charCodeAt(0) - 1)
     key.ctrl = true

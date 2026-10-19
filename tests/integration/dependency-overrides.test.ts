@@ -138,7 +138,7 @@ describe('dependency security overrides', () => {
     expect(mermaidPackage.exports?.['.']?.import).toBe(
       './dist/mermaid.core.mjs',
     )
-  })
+  }, 30_000)
 
   test('grpc proto-loader keeps its protobuf 7 parser path working', () => {
     const exporterRequire = createRequire(

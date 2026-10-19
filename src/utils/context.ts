@@ -6,6 +6,7 @@ import { isEnvTruthy } from './envUtils.js'
 import { getCanonicalName } from './model/model.js'
 import { resolveAntModel } from './model/antModels.js'
 import { getModelCapability } from './model/modelCapabilities.js'
+import { profileMatchesModel } from './model/providerProfiles.js'
 
 // Model context window size (200k tokens for all models right now)
 export const MODEL_CONTEXT_WINDOW_DEFAULT = 200_000
@@ -54,41 +55,117 @@ export function modelSupports1M(model: string): boolean {
   )
 }
 
+/**
+ * Parse a human-friendly context window string like "128k", "200k", "1m", "64k"
+ * or a raw number into a positive integer.
+ */
+export function parseContextWindowSize(val: unknown): number | undefined {
+  if (typeof val === 'number' && !isNaN(val) && val > 0) {
+    return Math.round(val)
+  }
+  if (typeof val !== 'string') return undefined
+  const trimmed = val.trim().toLowerCase()
+  if (!trimmed) return undefined
+
+  // "1m" -> 1,000,000; "1.5m" -> 1,500,000
+  const mMatch = /^([0-9]+(?:\.[0-9]+)?)\s*m$/i.exec(trimmed)
+  if (mMatch && mMatch[1]) {
+    return Math.round(parseFloat(mMatch[1]) * 1_000_000)
+  }
+  // "128k" -> 128,000; "64k" -> 64,000
+  const kMatch = /^([0-9]+(?:\.[0-9]+)?)\s*k$/i.exec(trimmed)
+  if (kMatch && kMatch[1]) {
+    return Math.round(parseFloat(kMatch[1]) * 1_000)
+  }
+  // Raw integer as string "128000"
+  const parsed = parseInt(trimmed, 10)
+  if (!isNaN(parsed) && parsed > 0) {
+    return parsed
+  }
+  return undefined
+}
+
+/**
+ * Extract context window size from bracketed suffix in model name, e.g. "model[128k]" or "model[64k]".
+ */
+export function extractContextWindowFromModelName(
+  model: string,
+): number | undefined {
+  const match = /\[(\d+(?:\.\d+)?[kmKM])\]/.exec(model)
+  if (match && match[1]) {
+    return parseContextWindowSize(match[1])
+  }
+  return undefined
+}
+
 export function getContextWindowForModel(
   model: string,
   betas?: string[],
 ): number {
-  // Allow override via environment variable (ant-only)
-  // This takes precedence over all other context window resolution, including 1M detection,
-  // so users can cap the effective context window for local decisions (auto-compact, etc.)
-  // while still using a 1M-capable endpoint.
-  if (
-    process.env.USER_TYPE === 'ant' &&
-    process.env.CLAUDE_CODE_MAX_CONTEXT_TOKENS
-  ) {
-    const override = parseInt(process.env.CLAUDE_CODE_MAX_CONTEXT_TOKENS, 10)
-    if (!isNaN(override) && override > 0) {
-      return override
-    }
+  // 1. Environment variable override (available to ALL users, not just 'ant')
+  const envOverride =
+    process.env.CLAUDE_CODE_MAX_CONTEXT_TOKENS ||
+    process.env.CONTEXT_WINDOW ||
+    process.env.CLAUDE_CONTEXT_WINDOW
+  if (envOverride) {
+    const parsed = parseContextWindowSize(envOverride)
+    if (parsed) return parsed
   }
 
-  // [1m] suffix — explicit client-side opt-in, respected over all detection
+  // 2. Global settings.json override (e.g. settings.contextWindow: "128k")
+  const profileSettings = getInitialSettings()
+  if (profileSettings.contextWindow) {
+    const parsed = parseContextWindowSize(profileSettings.contextWindow)
+    if (parsed) return parsed
+  }
+
+  // 3. Model name explicit bracket suffix like [128k], [64k], [1m], etc.
+  const fromModelName = extractContextWindowFromModelName(model)
+  if (fromModelName) {
+    return fromModelName
+  }
+
+  // 4. [1m] suffix — explicit client-side opt-in, respected over standard defaults
   if (has1mContext(model)) {
     return 1_000_000
   }
 
-  // customModels on the active provider profile may declare an explicit
-  // contextWindow (e.g. GLM 128K, Qwen 1M) for non-Anthropic endpoints.
-  const profileSettings = getInitialSettings()
+  // 5. Active provider profile: check customModels or profile-level contextWindow
   const activeProfile = profileSettings.providerProfiles?.find(
     p => p.id === profileSettings.activeProviderProfile,
   )
-  if (activeProfile?.customModels) {
-    const match = activeProfile.customModels.find(
-      m => (typeof m === 'string' ? m : m.value) === model,
-    )
-    if (match && typeof match !== 'string' && match.contextWindow) {
-      return match.contextWindow
+  if (activeProfile) {
+    if (activeProfile.customModels) {
+      const match = activeProfile.customModels.find(
+        m => (typeof m === 'string' ? m : m.value) === model,
+      )
+      if (match && typeof match !== 'string' && match.contextWindow) {
+        const parsed = parseContextWindowSize(match.contextWindow)
+        if (parsed) return parsed
+      }
+    }
+    if (activeProfile.contextWindow) {
+      const parsed = parseContextWindowSize(activeProfile.contextWindow)
+      if (parsed) return parsed
+    }
+  }
+
+  // 6. Check any saved ProviderProfile that owns this model
+  for (const p of profileSettings.providerProfiles ?? []) {
+    if (profileMatchesModel(p, model)) {
+      if (p.customModels) {
+        const match = p.customModels.find(
+          m => (typeof m === 'string' ? m : m.value) === model,
+        )
+        if (match && typeof match !== 'string' && match.contextWindow) {
+          const parsed = parseContextWindowSize(match.contextWindow)
+          if (parsed) return parsed
+        }
+      }
+      if (p.contextWindow) {
+        const parsed = parseContextWindowSize(p.contextWindow)
+        if (parsed) return parsed
+      }
     }
   }
 

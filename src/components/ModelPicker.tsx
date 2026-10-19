@@ -337,7 +337,8 @@ export function ModelPicker({
 
 function resolveOptionModel(value?: string): string | undefined {
   if (!value) return undefined;
-  return value === NO_PREFERENCE ? getDefaultMainLoopModel() : parseUserSpecifiedModel(value);
+  const clean = value.replace(/^profile:[^:]+:/, '');
+  return clean === NO_PREFERENCE ? getDefaultMainLoopModel() : parseUserSpecifiedModel(clean);
 }
 
 function EffortLevelIndicator({ effort }: { effort?: EffortLevel }): React.ReactNode {

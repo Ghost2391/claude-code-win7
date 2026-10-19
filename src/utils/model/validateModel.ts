@@ -10,6 +10,8 @@ import {
   AuthenticationError,
 } from '@anthropic-ai/sdk'
 import { getModelStrings } from './modelStrings.js'
+import { getInitialSettings } from '../settings/settings.js'
+import { profileMatchesModel } from './providerProfiles.js'
 
 // Cache valid models to avoid repeated API calls
 const validModelCache = new Map<string, boolean>()
@@ -44,6 +46,14 @@ export async function validateModel(
   // Check if it matches ANTHROPIC_CUSTOM_MODEL_OPTION (pre-validated by the user)
   if (normalizedModel === process.env.ANTHROPIC_CUSTOM_MODEL_OPTION) {
     return { valid: true }
+  }
+
+  // Check if it belongs to any saved provider profile (pre-configured by the user)
+  const settings = getInitialSettings()
+  for (const profile of settings.providerProfiles ?? []) {
+    if (profileMatchesModel(profile, normalizedModel)) {
+      return { valid: true }
+    }
   }
 
   // Check cache first

@@ -18,8 +18,69 @@
  */
 
 import { diffArrays } from 'diff'
-import hljs from 'highlight.js'
+import hljs from 'highlight.js/lib/core'
+import bash from 'highlight.js/lib/languages/bash'
+import c from 'highlight.js/lib/languages/c'
+import cmake from 'highlight.js/lib/languages/cmake'
+import cpp from 'highlight.js/lib/languages/cpp'
+import csharp from 'highlight.js/lib/languages/csharp'
+import css from 'highlight.js/lib/languages/css'
+import diff from 'highlight.js/lib/languages/diff'
+import dockerfile from 'highlight.js/lib/languages/dockerfile'
+import go from 'highlight.js/lib/languages/go'
+import graphql from 'highlight.js/lib/languages/graphql'
+import java from 'highlight.js/lib/languages/java'
+import javascript from 'highlight.js/lib/languages/javascript'
+import json from 'highlight.js/lib/languages/json'
+import kotlin from 'highlight.js/lib/languages/kotlin'
+import makefile from 'highlight.js/lib/languages/makefile'
+import markdown from 'highlight.js/lib/languages/markdown'
+import perl from 'highlight.js/lib/languages/perl'
+import php from 'highlight.js/lib/languages/php'
+import python from 'highlight.js/lib/languages/python'
+import ruby from 'highlight.js/lib/languages/ruby'
+import rust from 'highlight.js/lib/languages/rust'
+import shell from 'highlight.js/lib/languages/shell'
+import sql from 'highlight.js/lib/languages/sql'
+import typescript from 'highlight.js/lib/languages/typescript'
+import xml from 'highlight.js/lib/languages/xml'
+import yaml from 'highlight.js/lib/languages/yaml'
 import { basename, extname } from 'path'
+
+// Register only the languages we actually highlight. Importing the full
+// highlight.js bundle pulls in ~190 grammars (~1MB+ of parsed bytecode);
+// this subset covers everything the diff/markdown paths see in practice.
+const languages = {
+  bash,
+  c,
+  cmake,
+  cpp,
+  csharp,
+  css,
+  diff,
+  dockerfile,
+  go,
+  graphql,
+  java,
+  javascript,
+  json,
+  kotlin,
+  makefile,
+  markdown,
+  perl,
+  php,
+  python,
+  ruby,
+  rust,
+  shell,
+  sql,
+  typescript,
+  xml,
+  yaml,
+} as const
+for (const [name, definition] of Object.entries(languages)) {
+  hljs.registerLanguage(name, definition)
+}
 
 // Static import — createRequire(import.meta.url) fails in Bun --compile mode
 // because the resolved path points to the internal bunfs binary path where

@@ -1,11 +1,16 @@
+import { setMainLoopModelOverride } from '../bootstrap/state.js'
 import type { Command } from '../commands.js'
-import type { LocalCommandCall } from '../types/command.js'
+import type {
+  LocalCommandCall,
+  LocalJSXCommandContext,
+} from '../types/command.js'
 import { getAPIProvider } from '../utils/model/providers.js'
 import {
   activateProviderProfile,
   deactivateProviderProfile,
   deleteProviderProfile,
   getActiveProviderProfile,
+  getProfileDefaultModel,
   getProviderProfiles,
   type ProviderProfile,
 } from '../utils/model/providerProfiles.js'
@@ -44,7 +49,7 @@ function getMergedEnv(): Record<string, string> {
   return merged
 }
 
-const call: LocalCommandCall = async (args, _context) => {
+const call: LocalCommandCall = async (args, context) => {
   const arg = args.trim().toLowerCase()
 
   // profile <id>        — activate a saved provider profile
@@ -52,7 +57,7 @@ const call: LocalCommandCall = async (args, _context) => {
   // profile rm <id>     — delete a saved provider profile
   // profile off         — deactivate the active profile
   if (arg.startsWith('profile')) {
-    return handleProfileCommand(arg.slice('profile'.length).trim())
+    return handleProfileCommand(arg.slice('profile'.length).trim(), context)
   }
 
   // No argument: show current provider
@@ -195,7 +200,39 @@ const provider = {
   load: () => Promise.resolve({ call }),
 } satisfies Command
 
-function handleProfileCommand(rest: string): { type: 'text'; value: string } {
+/**
+ * Point the session at the profile's main-loop model so a provider switch
+ * takes effect immediately, without a follow-up /model selection.
+ */
+function applyProfileModel(
+  profile: ProviderProfile,
+  context: LocalJSXCommandContext,
+): string | undefined {
+  const model = getProfileDefaultModel(profile)
+  if (!model) return undefined
+  setMainLoopModelOverride(model)
+  context.setAppState(prev => ({
+    ...prev,
+    mainLoopModel: model,
+    mainLoopModelForSession: null,
+  }))
+  return model
+}
+
+/** Reset the session model so the env / settings default applies again. */
+function resetProfileModel(context: LocalJSXCommandContext): void {
+  setMainLoopModelOverride(undefined)
+  context.setAppState(prev => ({
+    ...prev,
+    mainLoopModel: null,
+    mainLoopModelForSession: null,
+  }))
+}
+
+function handleProfileCommand(
+  rest: string,
+  context: LocalJSXCommandContext,
+): { type: 'text'; value: string } {
   const [sub, id] = rest.split(/\s+/)
 
   if (sub === 'list' || sub === '') {
@@ -225,6 +262,7 @@ function handleProfileCommand(rest: string): { type: 'text'; value: string } {
   if (sub === 'off') {
     deactivateProviderProfile()
     applyConfigEnvironmentVariables()
+    resetProfileModel(context)
     return {
       type: 'text',
       value:
@@ -240,8 +278,10 @@ function handleProfileCommand(rest: string): { type: 'text'; value: string } {
     if (!profile) {
       return { type: 'text', value: `No provider profile with id: ${id}` }
     }
+    const wasActive = getActiveProviderProfile()?.id === id
     deleteProviderProfile(id)
     applyConfigEnvironmentVariables()
+    if (wasActive) resetProfileModel(context)
     return {
       type: 'text',
       value: `Removed provider profile "${profile.name}".`,
@@ -258,9 +298,12 @@ function handleProfileCommand(rest: string): { type: 'text'; value: string } {
   }
   activateProviderProfile(profile.id)
   applyConfigEnvironmentVariables()
+  const model = applyProfileModel(profile, context)
   return {
     type: 'text',
-    value: `Activated provider profile "${profile.name}" (${profile.modelType}).`,
+    value: model
+      ? `Activated provider profile "${profile.name}" (${profile.modelType}) — model set to ${model}.`
+      : `Activated provider profile "${profile.name}" (${profile.modelType}).`,
   }
 }
 

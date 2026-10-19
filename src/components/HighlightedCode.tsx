@@ -3,6 +3,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useSettings } from '../hooks/useSettings.js';
 import { Ansi, Box, type DOMElement, measureElement, NoSelect, Text, useTheme } from '@anthropic/ink';
 import { isFullscreenEnvEnabled } from '../utils/fullscreen.js';
+import { hashContent } from '../utils/hash.js';
 import sliceAnsi from '../utils/sliceAnsi.js';
 import { countCharInString } from '../utils/stringUtils.js';
 import { HighlightedCodeFallback } from './HighlightedCode/Fallback.js';
@@ -11,7 +12,7 @@ import type { ColorFile as ColorFileType } from 'color-diff-napi';
 
 // Module-level LRU cache for ColorFile instances to avoid recreating
 // them for the same (filePath, code) across component instances.
-const colorFileCache = new Map<string, { colorFile: ColorFileType; code: string }>();
+const colorFileCache = new Map<string, ColorFileType>();
 const COLOR_FILE_CACHE_MAX = 50;
 
 type Props = {
@@ -43,13 +44,15 @@ export const HighlightedCode = memo(function HighlightedCode({
     if (!ColorFile) {
       return null;
     }
-    const cacheKey = `${filePath}\0${code.length}`;
+    // Hash the code into the key instead of retaining a second copy of the
+    // (potentially large) source string in the cache value.
+    const cacheKey = `${filePath}\0${hashContent(code)}`;
     const cached = colorFileCache.get(cacheKey);
-    if (cached && cached.code === code) {
+    if (cached) {
       // Move to end (most recently used)
       colorFileCache.delete(cacheKey);
       colorFileCache.set(cacheKey, cached);
-      return cached.colorFile;
+      return cached;
     }
     const instance = new ColorFile(code, filePath);
     // Evict oldest entry if cache is full
@@ -57,7 +60,7 @@ export const HighlightedCode = memo(function HighlightedCode({
       const oldest = colorFileCache.keys().next().value;
       if (oldest !== undefined) colorFileCache.delete(oldest);
     }
-    colorFileCache.set(cacheKey, { colorFile: instance, code });
+    colorFileCache.set(cacheKey, instance);
     return instance;
   }, [code, filePath, syntaxHighlightingDisabled]);
 

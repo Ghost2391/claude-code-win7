@@ -163,6 +163,10 @@ const EXTENDED_KEYS_TERMINALS = [
 /** True if this terminal correctly handles extended key reporting
  *  (Kitty keyboard protocol + xterm modifyOtherKeys). */
 export function supportsExtendedKeys(): boolean {
+  // Windows Terminal never sets TERM_PROGRAM; WT_SESSION is its marker
+  // (a per-session GUID). The allowlist entry covers wrappers that do set
+  // TERM_PROGRAM to a Windows Terminal-ish value.
+  if (process.env.WT_SESSION) return true
   return EXTENDED_KEYS_TERMINALS.includes(process.env.TERM_PROGRAM ?? '')
 }
 

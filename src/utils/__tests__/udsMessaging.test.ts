@@ -494,6 +494,7 @@ describe('UDS inbox retention', () => {
       const conn = createConnection(path, () => {
         conn.write('x'.repeat(MAX_UDS_FRAME_BYTES + 1))
       })
+      conn.on('data', () => {})
       conn.setTimeout(5_000, () => {
         conn.destroy()
         reject(new Error('Timed out waiting for oversized frame close'))

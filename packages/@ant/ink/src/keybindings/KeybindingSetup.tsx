@@ -252,6 +252,11 @@ function ChordInterceptor({
           // (multi-keystroke sequences). Single-keystroke matches should propagate
           // to per-hook handlers to avoid interfering with other input handling.
           if (wasInChord) {
+            // A completed chord always consumes the keystroke, even when no
+            // handler is registered for the action. Stopping propagation only
+            // inside the handler loop let the final key of an unhandled chord
+            // fall through and get inserted as text.
+            event.stopImmediatePropagation();
             const contextsSet = new Set(contexts);
             if (registry) {
               const handlers = registry.get(result.action);
@@ -259,7 +264,6 @@ function ChordInterceptor({
                 for (const registration of handlers) {
                   if (contextsSet.has(registration.context)) {
                     registration.handler();
-                    event.stopImmediatePropagation();
                     break;
                   }
                 }

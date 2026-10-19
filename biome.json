@@ -12,6 +12,7 @@
       "!!**/dist-stable",
       "!!**/.claude/workflows",
       "!!**/*.workflow.mjs",
+      "!!src/entrypoints/web/embeddedAssets.generated.ts",
       "!!src/entrypoints/web/public/*.min.js",
       "!!src/entrypoints/web/public/*.min.css"
     ]
