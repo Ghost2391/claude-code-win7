@@ -6,7 +6,10 @@ import { isEnvTruthy } from './envUtils.js'
 import { getCanonicalName } from './model/model.js'
 import { resolveAntModel } from './model/antModels.js'
 import { getModelCapability } from './model/modelCapabilities.js'
-import { profileMatchesModel } from './model/providerProfiles.js'
+import {
+  type ProviderProfile,
+  profileMatchesModel,
+} from './model/providerProfiles.js'
 
 // Model context window size (200k tokens for all models right now)
 export const MODEL_CONTEXT_WINDOW_DEFAULT = 200_000
@@ -98,6 +101,60 @@ export function extractContextWindowFromModelName(
   return undefined
 }
 
+/**
+ * Context window declared for `model` by a single provider profile:
+ * the customModels entry wins over the profile-level default.
+ */
+function getProfileContextWindow(
+  profile: ProviderProfile,
+  model: string,
+): number | undefined {
+  if (profile.customModels) {
+    const match = profile.customModels.find(
+      m => (typeof m === 'string' ? m : m.value) === model,
+    )
+    if (match && typeof match !== 'string' && match.contextWindow) {
+      const parsed = parseContextWindowSize(match.contextWindow)
+      if (parsed) return parsed
+    }
+  }
+  if (profile.contextWindow) {
+    return parseContextWindowSize(profile.contextWindow)
+  }
+  return undefined
+}
+
+/**
+ * Resolve a model's context window from saved provider profiles.
+ *
+ * The active profile takes precedence when it declares the model, so that a
+ * model name shared by several saved profiles always uses the window of the
+ * provider the session is actually running on. Otherwise the first profile
+ * that declares the model wins.
+ */
+export function resolveProfileContextWindow(
+  profiles: readonly ProviderProfile[] | undefined,
+  activeProfileId: string | undefined,
+  model: string,
+): number | undefined {
+  if (!profiles?.length) return undefined
+  const activeProfile = activeProfileId
+    ? profiles.find(p => p.id === activeProfileId)
+    : undefined
+  if (activeProfile && profileMatchesModel(activeProfile, model)) {
+    const window = getProfileContextWindow(activeProfile, model)
+    if (window) return window
+  }
+  for (const p of profiles) {
+    if (p === activeProfile) continue
+    if (profileMatchesModel(p, model)) {
+      const window = getProfileContextWindow(p, model)
+      if (window) return window
+    }
+  }
+  return undefined
+}
+
 export function getContextWindowForModel(
   model: string,
   betas?: string[],
@@ -130,43 +187,25 @@ export function getContextWindowForModel(
     return 1_000_000
   }
 
-  // 5. Active provider profile: check customModels or profile-level contextWindow
+  // 5. Saved provider profiles. The active profile wins when it owns the
+  // model (two profiles may declare the same model name; the session is
+  // running on the active provider's endpoint), then any other profile that
+  // declares it — e.g. a model picked from another provider in /model.
+  const profileWindow = resolveProfileContextWindow(
+    profileSettings.providerProfiles,
+    profileSettings.activeProviderProfile,
+    model,
+  )
+  if (profileWindow) return profileWindow
+
+  // 6. Active provider profile fallback: apply profile-level contextWindow
+  // for models this profile doesn't declare.
   const activeProfile = profileSettings.providerProfiles?.find(
     p => p.id === profileSettings.activeProviderProfile,
   )
-  if (activeProfile) {
-    if (activeProfile.customModels) {
-      const match = activeProfile.customModels.find(
-        m => (typeof m === 'string' ? m : m.value) === model,
-      )
-      if (match && typeof match !== 'string' && match.contextWindow) {
-        const parsed = parseContextWindowSize(match.contextWindow)
-        if (parsed) return parsed
-      }
-    }
-    if (activeProfile.contextWindow) {
-      const parsed = parseContextWindowSize(activeProfile.contextWindow)
-      if (parsed) return parsed
-    }
-  }
-
-  // 6. Check any saved ProviderProfile that owns this model
-  for (const p of profileSettings.providerProfiles ?? []) {
-    if (profileMatchesModel(p, model)) {
-      if (p.customModels) {
-        const match = p.customModels.find(
-          m => (typeof m === 'string' ? m : m.value) === model,
-        )
-        if (match && typeof match !== 'string' && match.contextWindow) {
-          const parsed = parseContextWindowSize(match.contextWindow)
-          if (parsed) return parsed
-        }
-      }
-      if (p.contextWindow) {
-        const parsed = parseContextWindowSize(p.contextWindow)
-        if (parsed) return parsed
-      }
-    }
+  if (activeProfile?.contextWindow) {
+    const parsed = parseContextWindowSize(activeProfile.contextWindow)
+    if (parsed) return parsed
   }
 
   const cap = getModelCapability(model)

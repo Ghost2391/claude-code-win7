@@ -1205,14 +1205,21 @@ export function REPL({
   // animation frame, avoiding a useInterval that re-renders the entire REPL.
   const [userInputOnProcessing, setUserInputOnProcessingRaw] = React.useState<string | undefined>(undefined);
   // messagesRef.current.length at the moment userInputOnProcessing was set.
-  // The placeholder hides once displayedMessages grows past this — i.e. the
-  // real user message has landed in the visible transcript.
+  // The placeholder hides once the real user message lands (messages grows
+  // past this) and the visible view has caught up — see promptLandedRef.
   const userInputBaselineRef = React.useRef(0);
   // True while the submitted prompt is being processed but its user message
   // hasn't reached setMessages yet. setMessages uses this to keep the
   // baseline in sync when unrelated async messages (bridge status, hook
   // results, scheduled tasks) land during that window.
   const userMessagePendingRef = React.useRef(false);
+  // Latch: the submitted prompt has been rendered from the real messages
+  // array (not the synthetic placeholder). Reset on each new submission.
+  // Length comparisons against displayedMessages alone break once the
+  // deferred view is capped at DEFERRED_CAP: its length can never grow past
+  // the cap, so the placeholder would stay visible next to the real prompt
+  // and duplicate the `❯ <prompt>` line on long sessions.
+  const promptLandedRef = React.useRef(false);
 
   // Wall-clock time tracking refs for accurate elapsed time calculation
   const loadingStartTimeRef = React.useRef<number>(0);
@@ -1530,8 +1537,10 @@ export function REPL({
     if (input !== undefined) {
       userInputBaselineRef.current = messagesRef.current.length;
       userMessagePendingRef.current = true;
+      promptLandedRef.current = false;
     } else {
       userMessagePendingRef.current = false;
+      promptLandedRef.current = false;
     }
     setUserInputOnProcessingRaw(input);
   }, []);
@@ -5786,18 +5795,29 @@ export function REPL({
     return transcriptReturn;
   }
 
-  // Show the placeholder until the real user message appears in
-  // displayedMessages. userInputOnProcessing stays set for the whole turn
-  // (cleared in resetLoadingState); this length check hides it once
-  // displayedMessages grows past the baseline captured at submit time.
-  // Covers both gaps: before setMessages is called (processUserInput), and
-  // while deferredMessages lags behind messages. Suppressed when viewing an
-  // agent — displayedMessages is a different array there, and onAgentSubmit
-  // doesn't use the placeholder anyway.
+  // Show the placeholder until the real user message appears in the visible
+  // transcript. userInputOnProcessing stays set for the whole turn (cleared
+  // in resetLoadingState).
+  //
+  // Latch on the uncapped `messages` array: when the deferred view is capped
+  // at DEFERRED_CAP (long sessions), `displayedMessages.length` can never grow
+  // past the cap, so a length comparison against the baseline would leave the
+  // placeholder — and the real prompt right below it — visible for the whole
+  // turn. Wait for the deferred view to catch up before hiding, so the echo
+  // doesn't blink out while the real message is still deferred.
+  // Suppressed when viewing an agent — displayedMessages is a different array
+  // there, and onAgentSubmit doesn't use the placeholder anyway.
+  if (
+    userInputOnProcessing &&
+    !viewedAgentTask &&
+    !promptLandedRef.current &&
+    messages.length > userInputBaselineRef.current &&
+    (usesSyncMessages || displayedMessages === cappedMessages)
+  ) {
+    promptLandedRef.current = true;
+  }
   const placeholderText =
-    userInputOnProcessing && !viewedAgentTask && displayedMessages.length <= userInputBaselineRef.current
-      ? userInputOnProcessing
-      : undefined;
+    userInputOnProcessing && !viewedAgentTask && !promptLandedRef.current ? userInputOnProcessing : undefined;
 
   const toolPermissionOverlay =
     focusedInputDialog === 'tool-permission' ? (

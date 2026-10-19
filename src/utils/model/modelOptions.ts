@@ -623,6 +623,17 @@ export function getModelOptions(fastMode = false): ModelOption[] {
     }
     const candidates: CandidateModel[] = []
 
+    for (const item of (profile.customModels ??
+      []) as CustomModelDefinition[]) {
+      const value = typeof item === 'string' ? item : item.value
+      if (value) {
+        candidates.push({
+          value,
+          label: typeof item === 'string' ? value : item.label,
+          description: typeof item === 'string' ? undefined : item.description,
+        })
+      }
+    }
     if (profile.sonnetModel) {
       candidates.push({
         value: profile.sonnetModel,
@@ -640,18 +651,6 @@ export function getModelOptions(fastMode = false): ModelOption[] {
         value: profile.haikuModel,
         description: 'Default Haiku model',
       })
-    }
-    for (const item of (profile.customModels ??
-      []) as CustomModelDefinition[]) {
-      const value = typeof item === 'string' ? item : item.value
-      if (value) {
-        candidates.push({
-          value,
-          label: typeof item === 'string' ? value : item.label,
-          description:
-            typeof item === 'string' ? 'Custom model' : item.description,
-        })
-      }
     }
 
     const seenInProfile = new Set<string>()
