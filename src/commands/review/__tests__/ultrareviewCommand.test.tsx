@@ -1,3 +1,4 @@
+import { growthbookMock } from '../../../../tests/mocks/growthbook';
 /**
  * Regression tests for `ultrareviewCommand.call` (src/commands/review/
  * ultrareviewCommand.tsx). The previous version of `call` made an axios
@@ -49,9 +50,11 @@ mock.module('src/utils/log.ts', logMock);
 mock.module('src/services/analytics/index.js', () => ({
   logEvent: () => {},
 }));
-mock.module('src/services/analytics/growthbook.js', () => ({
-  getFeatureValue_CACHED_MAY_BE_STALE: () => null,
-}));
+mock.module('src/services/analytics/growthbook.js', () =>
+  growthbookMock({
+    getFeatureValue_CACHED_MAY_BE_STALE: () => null,
+  }),
+);
 
 // Mock auth utilities
 mock.module('src/utils/auth.js', () => ({

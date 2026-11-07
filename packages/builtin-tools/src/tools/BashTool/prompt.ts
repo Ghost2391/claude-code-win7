@@ -39,6 +39,34 @@ function getBackgroundUsageNote(): string | null {
   return "You can use the `run_in_background` parameter to run the command in the background. Only use this if you don't need the result immediately and are OK being notified when the command completes later. You do not need to check the output right away - you'll be notified when it finishes. You do not need to use '&' at the end of the command when using this parameter."
 }
 
+/**
+ * Compact git guidance (CLAUDE_CODE_COMPACT_BASH_PROMPT=1): keeps the safety
+ * protocol and commit-message format, drops the step-by-step walkthrough and
+ * the PR section — the pair costs ~5k characters (~1.4k tokens) on every
+ * request. Opt-in because the verbose flow measurably improves git behavior
+ * for models without the /commit skill.
+ */
+function getCompactGitInstructions(): string {
+  const { commit: commitAttribution } = getAttributionTexts()
+  return `# Committing changes with git
+
+Only create commits when the user explicitly asks. Never amend unless asked; after a pre-commit hook failure, fix and create a NEW commit.
+
+Git Safety Protocol:
+- NEVER update the git config
+- NEVER run destructive git commands (push --force, reset --hard, checkout ., restore ., clean -f, branch -D) unless the user explicitly requests them
+- NEVER skip hooks (--no-verify, --no-gpg-sign, etc) unless the user explicitly requests it
+- NEVER force push to main/master
+- Stage specific files by name, not \`git add -A\` / \`git add .\`
+- Do not commit files that likely contain secrets (.env, credentials.json, …); warn the user first
+
+Workflow: run \`git status\`, \`git diff\` and \`git log\` in parallel; write a concise 1-2 sentence message about WHY the change was made; commit with a HEREDOC; verify with \`git status\` afterward.
+${commitAttribution ? `\nEnd the commit message with:\n${commitAttribution}` : ''}
+
+# Pull requests
+Use \`gh\` for all GitHub operations. Draft a title under 70 characters plus a body with a short summary and test plan; create the PR with \`gh pr create\` using a HEREDOC body. Return the PR URL when done.`
+}
+
 function getCommitAndPRInstructions(): string {
   // Defense-in-depth: undercover instructions must survive even if the user
   // has disabled git instructions entirely. Attribution stripping and model-ID
@@ -51,6 +79,10 @@ function getCommitAndPRInstructions(): string {
       : ''
 
   if (!shouldIncludeGitInstructions()) return undercoverSection
+
+  if (isEnvTruthy(process.env.CLAUDE_CODE_COMPACT_BASH_PROMPT)) {
+    return `${undercoverSection}${getCompactGitInstructions()}`
+  }
 
   // For ant users, use the short version pointing to skills
   if (process.env.USER_TYPE === 'ant') {

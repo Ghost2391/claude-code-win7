@@ -8,7 +8,7 @@ import { isTodoV2Enabled } from 'src/utils/tasks.js'
 import { TodoListSchema } from 'src/utils/todo/types.js'
 import { VERIFICATION_AGENT_TYPE } from '../AgentTool/constants.js'
 import { TODO_WRITE_TOOL_NAME } from './constants.js'
-import { DESCRIPTION, PROMPT } from './prompt.js'
+import { COMPACT_PROMPT, DESCRIPTION, PROMPT } from './prompt.js'
 
 const inputSchema = lazySchema(() =>
   z.strictObject({
@@ -37,7 +37,9 @@ export const TodoWriteTool = buildTool({
     return DESCRIPTION
   },
   async prompt() {
-    return PROMPT
+    // Task-V2 adds TaskCreate/TaskUpdate/TaskList/TaskGet; the example-heavy
+    // TodoWrite description then duplicates guidance and costs ~2.6k tokens.
+    return isTodoV2Enabled() ? COMPACT_PROMPT : PROMPT
   },
   get inputSchema(): InputSchema {
     return inputSchema()

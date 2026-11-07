@@ -1,3 +1,4 @@
+import { growthbookMock } from '../../../tests/mocks/growthbook'
 import { describe, expect, test, beforeEach, afterEach, mock } from 'bun:test'
 
 // Mock heavy dependencies to avoid import chain issues
@@ -12,10 +13,14 @@ mock.module('src/utils/auth.js', () => ({
   isMaxSubscriber: () => false,
   isTeamSubscriber: () => false,
 }))
-mock.module('src/services/analytics/growthbook.js', () => ({
-  getFeatureValue_CACHED_MAY_BE_STALE: (_key: string, defaultValue: unknown) =>
-    defaultValue ?? {},
-}))
+mock.module('src/services/analytics/growthbook.js', () =>
+  growthbookMock({
+    getFeatureValue_CACHED_MAY_BE_STALE: (
+      _key: string,
+      defaultValue: unknown,
+    ) => defaultValue ?? {},
+  }),
+)
 mock.module('src/utils/model/modelSupportOverrides.js', () => ({
   get3PModelCapabilityOverride: () => undefined,
 }))

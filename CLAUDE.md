@@ -315,6 +315,17 @@ mock.module("src/utils/debug.ts", debugMock);
 
 源文件导出变更时只需更新 `tests/mocks/` 下的对应文件，不需要逐个修改测试。
 
+**`growthbook.ts` 使用共享 mock**（`tests/mocks/growthbook.ts`）。它的表面必须完整：部分 mock（只实现一两个导出）会在同进程后续测试文件中触发 `Export named 'X' not found` 链接错误。用法：
+
+```ts
+import { growthbookMock } from "../../../tests/mocks/growthbook";
+mock.module("src/services/analytics/growthbook.js", () => growthbookMock());
+// 只覆盖本文件关心的行为：
+mock.module("src/services/analytics/growthbook.js", () =>
+  growthbookMock({ getFeatureValue_CACHED_MAY_BE_STALE: () => true }),
+);
+```
+
 不要 mock：纯函数模块（`errors.ts`、`stringUtils.js`）、mock 值与真实实现相同的模块、mock 路径与实际 import 不匹配的模块。
 
 路径规则：统一用 `.ts` 扩展名 + `src/*` 别名路径，禁止双重 mock 同一模块。

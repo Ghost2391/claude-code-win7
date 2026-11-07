@@ -1,4 +1,4 @@
-import { createHash, type UUID } from 'crypto'
+import { type UUID } from 'crypto'
 import { diffLines } from 'diff'
 import type { Stats } from 'fs'
 import {
@@ -25,6 +25,14 @@ import { logForDebugging } from './debug.js'
 import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
 import { getErrnoCode, isENOENT } from './errors.js'
 import { pathExists } from './file.js'
+import {
+  blobNameForContentHash,
+  ensureBlobDir,
+  hasContentHash,
+  hashFileContent,
+  isContentAddressedBlobName,
+  storeBlob,
+} from './fileHistoryBlobs.js'
 import { logError } from './log.js'
 import { recordFileHistorySnapshot } from './sessionStorage.js'
 
@@ -34,6 +42,13 @@ export type FileHistoryBackup = {
   backupFileName: BackupFileName
   version: number
   backupTime: Date
+  /**
+   * Source file mode at backup time. Content-addressed blobs are shared by
+   * every file/version with the same content, so the blob's own mode can't
+   * represent the original — restore uses this instead. Absent on backups
+   * written before content addressing (those fall back to the blob's mode).
+   */
+  mode?: number
 }
 
 export type FileHistorySnapshot = {
@@ -51,8 +66,11 @@ export type FileHistoryState = {
   snapshotSequence: number
 }
 
-// Disabled: file checkpointing causes unbounded memory growth (100 snapshots × full file backups).
-// See heap snapshot analysis — re-enable only after switching to incremental diffs.
+// Retained-snapshot cap. Backups are content-addressed (fileHistoryBlobs.ts),
+// so a snapshot no longer implies a full copy per file — identical content is
+// stored once and re-tracked unchanged files write nothing. The cap is now a
+// UX/session-file-size choice rather than a memory ceiling. (The previous
+// full-copy scheme is why this was dropped to 20; see heap snapshot analysis.)
 const MAX_SNAPSHOTS = 20
 export type DiffStats =
   | {
@@ -263,6 +281,7 @@ export async function fileHistoryMakeSnapshot(
               filePath,
               latestBackup.backupFileName,
               fileStats,
+              latestBackup.mode,
             ))
           ) {
             // File hasn't been modified since the latest version, reuse it
@@ -524,7 +543,16 @@ export async function fileHistoryHasAnyChanges(
         if (await pathExists(filePath)) return true
         continue
       }
-      if (await checkOriginFileChanged(filePath, backupFileName)) return true
+      if (
+        await checkOriginFileChanged(
+          filePath,
+          backupFileName,
+          undefined,
+          targetBackup?.mode,
+        )
+      ) {
+        return true
+      }
     } catch (error) {
       logError(error)
     }
@@ -575,8 +603,15 @@ async function applySnapshot(
       }
 
       // File should exist at a specific version. Restore only if it differs.
-      if (await checkOriginFileChanged(filePath, backupFileName)) {
-        await restoreBackup(filePath, backupFileName)
+      if (
+        await checkOriginFileChanged(
+          filePath,
+          backupFileName,
+          undefined,
+          targetBackup?.mode,
+        )
+      ) {
+        await restoreBackup(filePath, backupFileName, targetBackup?.mode)
         logForDebugging(
           `FileHistory: [Rewind] Restored ${filePath} from ${backupFileName}`,
         )
@@ -597,12 +632,17 @@ async function applySnapshot(
  * Optionally reuses a pre-fetched stat for the original file (when the caller
  * already stat'd it to check existence, we avoid a second syscall).
  *
+ * Content-addressed backups compare the file's hash against the blob name —
+ * the mtime shortcut used for legacy copies is invalid there, because a shared
+ * blob's mtime says nothing about when this particular file was snapshotted.
+ *
  * Exported for testing.
  */
 export async function checkOriginFileChanged(
   originalFile: string,
   backupFileName: string,
   originalStatsHint?: Stats,
+  expectedMode?: number,
 ): Promise<boolean> {
   const backupPath = resolveBackupPath(backupFileName)
 
@@ -614,6 +654,26 @@ export async function checkOriginFileChanged(
       if (!isENOENT(e)) return true
     }
   }
+
+  if (isContentAddressedBlobName(backupFileName)) {
+    // File gone since the snapshot -> changed (needs restoring).
+    if (!originalStats) return true
+    if (expectedMode !== undefined && originalStats.mode !== expectedMode) {
+      return true
+    }
+    let backupStats: Stats | null = null
+    try {
+      backupStats = await stat(backupPath)
+    } catch (e: unknown) {
+      if (!isENOENT(e)) return true
+    }
+    // Missing blob -> report changed so the caller surfaces the failure.
+    if (!backupStats) return true
+    // Size differs -> different content without hashing.
+    if (backupStats.size !== originalStats.size) return true
+    return !(await hasContentHash(originalFile, backupFileName.slice(1)))
+  }
+
   let backupStats: Stats | null = null
   try {
     backupStats = await stat(backupPath)
@@ -724,14 +784,6 @@ async function computeDiffStatsForFile(
   }
 }
 
-function getBackupFileName(filePath: string, version: number): string {
-  const fileNameHash = createHash('sha256')
-    .update(filePath)
-    .digest('hex')
-    .slice(0, 16)
-  return `${fileNameHash}@v${version}`
-}
-
 function resolveBackupPath(backupFileName: string, sessionId?: string): string {
   const configDir = getClaudeConfigHomeDir()
   return join(
@@ -745,7 +797,12 @@ function resolveBackupPath(backupFileName: string, sessionId?: string): string {
 /**
  * Creates a backup of the file at filePath. If the file does not exist
  * (ENOENT), records a null backup (file-did-not-exist marker). All IO is
- * async. Lazy mkdir: tries copyFile first, creates the directory on ENOENT.
+ * async.
+ *
+ * Backups are content-addressed (`b<sha256>`): the same content is stored
+ * once no matter how many files/versions reference it, and re-tracking an
+ * unchanged file never writes a second copy. The source mode is recorded on
+ * the backup record because a shared blob can't carry per-file permissions.
  */
 async function createBackup(
   filePath: string | null,
@@ -754,9 +811,6 @@ async function createBackup(
   if (filePath === null) {
     return { backupFileName: null, version, backupTime: new Date() }
   }
-
-  const backupFileName = getBackupFileName(filePath, version)
-  const backupPath = resolveBackupPath(backupFileName)
 
   // Stat first: if the source is missing, record a null backup and skip the
   // copy. Separates "source missing" from "backup dir missing" cleanly —
@@ -772,30 +826,25 @@ async function createBackup(
     throw e
   }
 
-  // copyFile preserves content and avoids reading the whole file into the JS
-  // heap (which the previous readFileSync+writeFileSync pipeline did, OOMing
-  // on large tracked files). Lazy mkdir: 99% of calls hit the fast path
-  // (directory already exists); on ENOENT, mkdir then retry.
-  try {
-    await copyFile(filePath, backupPath)
-  } catch (e: unknown) {
-    if (!isENOENT(e)) throw e
-    await mkdir(dirname(backupPath), { recursive: true })
-    await copyFile(filePath, backupPath)
-  }
+  // Hash with a streaming read: large tracked files never enter the JS heap.
+  const contentHash = await hashFileContent(filePath)
+  const backupFileName = blobNameForContentHash(contentHash)
+  const backupPath = resolveBackupPath(backupFileName)
 
-  // Preserve file permissions on the backup.
-  await chmod(backupPath, srcStats.mode)
+  await ensureBlobDir(backupPath)
+  const created = await storeBlob(filePath, backupPath, srcStats.mode)
 
   logEvent('tengu_file_history_backup_file_created', {
     version: version,
     fileSize: srcStats.size,
+    deduplicated: !created,
   })
 
   return {
     backupFileName,
     version,
     backupTime: new Date(),
+    mode: srcStats.mode,
   }
 }
 
@@ -806,6 +855,7 @@ async function createBackup(
 async function restoreBackup(
   filePath: string,
   backupFileName: string,
+  mode?: number,
 ): Promise<void> {
   const backupPath = resolveBackupPath(backupFileName)
 
@@ -834,8 +884,10 @@ async function restoreBackup(
     await copyFile(backupPath, filePath)
   }
 
-  // Restore the file permissions
-  await chmod(filePath, backupStats.mode)
+  // Restore the file permissions. Content-addressed blobs are shared, so the
+  // blob's own mode belongs to whichever file created it — prefer the mode
+  // recorded on the backup record.
+  await chmod(filePath, mode ?? backupStats.mode)
 }
 
 /**

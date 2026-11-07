@@ -2,8 +2,17 @@ import type { PermissionResult } from 'src/utils/permissions/PermissionResult.js
 import { z } from 'zod/v4'
 import { buildTool, type ToolDef } from 'src/Tool.js'
 import { lazySchema } from 'src/utils/lazySchema.js'
+import { logForDebugging } from 'src/utils/debug.js'
 import { jsonStringify } from 'src/utils/slowOperations.js'
-import { createAdapter } from './adapters/index.js'
+import {
+  classifyNetworkError,
+  createAdapter,
+  createAdapterByKey,
+  type SearchAdapterKey,
+  type SearchProgress,
+  type SearchResult as AdapterSearchResult,
+  type WebSearchAdapter,
+} from './adapters/index.js'
 import { getWebSearchPrompt, WEB_SEARCH_TOOL_NAME } from './prompt.js'
 import {
   getToolUseSummary,
@@ -11,6 +20,107 @@ import {
   renderToolUseMessage,
   renderToolUseProgressMessage,
 } from './UI.js'
+
+/** Small delay between retry attempts (ms). */
+const RETRY_BACKOFF_MS = 500
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise(resolve => {
+    if (signal?.aborted) {
+      resolve()
+      return
+    }
+    const timer = setTimeout(resolve, ms)
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer)
+        resolve()
+      },
+      { once: true },
+    )
+  })
+}
+
+function describeAdapterFailure(error: unknown): string {
+  if (error instanceof Error) {
+    const cause = error.cause instanceof Error ? error.cause.message : undefined
+    return cause && cause !== error.message
+      ? `${error.message}: ${cause}`
+      : error.message
+  }
+  return String(error)
+}
+
+/**
+ * Fallback order when the configured backend is unreachable. Both scrape a
+ * public HTML page — no API key, no third-party proxy — so they fail only
+ * when the network itself is down.
+ */
+const FALLBACK_ADAPTERS: readonly SearchAdapterKey[] = ['bing', 'duckduckgo']
+
+/**
+ * Search with resilience against flaky networks and dead search backends:
+ *
+ *   1. First attempt on the configured adapter.
+ *   2. On a retryable transport error (socket closed / ECONNRESET / timeout),
+ *      wait briefly and retry the SAME adapter — stale keep-alive pools and
+ *      one-off resets usually recover.
+ *   3. If it still fails — or the backend is plainly unreachable (DNS /
+ *      connection refused / TLS) — swap in a different backend (Bing HTML,
+ *      then DuckDuckGo HTML) so WebSearch keeps working instead of surfacing
+ *      a raw "socket closed" error to the model.
+ *
+ * Non-network errors (bad API key, 4xx JSON, abort) propagate immediately.
+ */
+async function searchWithNetworkResilience(
+  adapter: WebSearchAdapter,
+  query: string,
+  options: Parameters<WebSearchAdapter['search']>[1],
+): Promise<AdapterSearchResult[]> {
+  let lastError: unknown
+  try {
+    return await adapter.search(query, options)
+  } catch (error) {
+    const kind = classifyNetworkError(error)
+    if (kind === null || options.signal?.aborted) throw error
+    lastError = error
+    if (kind === 'retryable') {
+      await sleep(RETRY_BACKOFF_MS, options.signal)
+      if (options.signal?.aborted) throw error
+      try {
+        return await adapter.search(query, options)
+      } catch (retryError) {
+        if (
+          classifyNetworkError(retryError) === null ||
+          options.signal?.aborted
+        ) {
+          throw retryError
+        }
+        lastError = retryError
+      }
+    }
+  }
+
+  for (const key of FALLBACK_ADAPTERS) {
+    if (options.signal?.aborted) throw lastError
+    const fallback = createAdapterByKey(key)
+    if (fallback.constructor.name === adapter.constructor.name) continue
+    try {
+      const results = await fallback.search(query, options)
+      logForDebugging(
+        `[WebSearch] ${adapter.constructor.name} failed (${describeAdapterFailure(lastError)}); ` +
+          `served by ${key} fallback.`,
+      )
+      return results
+    } catch (fallbackError) {
+      if (options.signal?.aborted) throw fallbackError
+      lastError = fallbackError
+    }
+  }
+
+  throw lastError
+}
 
 const inputSchema = lazySchema(() =>
   z.strictObject({
@@ -169,8 +279,7 @@ export const WebSearchTool = buildTool({
     const startTime = performance.now()
     const { query } = input
 
-    const adapter = createAdapter()
-    const adapterResults = await adapter.search(query, {
+    const searchOptions = {
       allowedDomains: input.allowed_domains,
       blockedDomains: input.blocked_domains,
       numResults: input.num_results,
@@ -178,7 +287,7 @@ export const WebSearchTool = buildTool({
       searchType: input.search_type,
       contextMaxCharacters: input.context_max_characters,
       signal: context.abortController.signal,
-      onProgress(progress) {
+      onProgress(progress: SearchProgress) {
         if (onProgress) {
           const progressCounter = Date.now()
           onProgress({
@@ -187,7 +296,25 @@ export const WebSearchTool = buildTool({
           })
         }
       },
-    })
+    }
+
+    const adapter = createAdapter()
+    let adapterResults: AdapterSearchResult[]
+    try {
+      adapterResults = await searchWithNetworkResilience(
+        adapter,
+        query,
+        searchOptions,
+      )
+    } catch (error) {
+      if (context.abortController.signal.aborted) throw error
+      throw new Error(
+        `Web search failed (${describeAdapterFailure(error)}). ` +
+          `Tried ${adapter.constructor.name}. ` +
+          `Set a different backend via /web-tools or WEB_SEARCH_ADAPTER (bing|brave|exa|tavily).`,
+        { cause: error },
+      )
+    }
 
     const endTime = performance.now()
     const durationSeconds = (endTime - startTime) / 1000

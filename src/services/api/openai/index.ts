@@ -369,7 +369,6 @@ export async function* queryModelOpenAI(
         )
       : adaptOpenAIStreamToAnthropic(
           await getOpenAIClient({
-            maxRetries: 0,
             fetchOverride: options.fetchOverride as unknown as typeof fetch,
             source: options.querySource,
           }).chat.completions.create(

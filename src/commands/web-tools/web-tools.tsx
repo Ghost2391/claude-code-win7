@@ -9,7 +9,7 @@ import type { LocalJSXCommandCall, LocalJSXCommandContext } from '../../types/co
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-type SearchAdapterKey = 'tavily' | 'api' | 'bing' | 'brave' | 'exa';
+type SearchAdapterKey = 'tavily' | 'api' | 'bing' | 'brave' | 'duckduckgo' | 'exa';
 type FetchAdapterKey = 'tavily' | 'http';
 
 interface AdapterMeta {
@@ -20,7 +20,7 @@ interface AdapterMeta {
 }
 
 type SettingsJson = Record<string, unknown> & {
-  webSearchAdapter?: 'api' | 'bing' | 'brave' | 'exa' | 'tavily';
+  webSearchAdapter?: 'api' | 'bing' | 'brave' | 'duckduckgo' | 'exa' | 'tavily';
   webFetchAdapter?: 'tavily' | 'http';
   tavilyEndpointUrl?: string;
   braveApiKey?: string;
@@ -38,6 +38,7 @@ const SEARCH_ADAPTERS: AdapterMeta[] = [
   { key: 'api', label: 'Anthropic API', description: 'Anthropic server-side web search', hasConfig: false },
   { key: 'bing', label: 'Bing', description: 'Scrape Bing HTML results', hasConfig: false },
   { key: 'brave', label: 'Brave', description: 'Brave Search API (needs API key)', hasConfig: true },
+  { key: 'duckduckgo', label: 'DuckDuckGo', description: 'Scrape DuckDuckGo HTML results (no key)', hasConfig: false },
   { key: 'exa', label: 'Exa', description: 'Exa AI search (MCP endpoint)', hasConfig: true },
 ];
 

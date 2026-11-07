@@ -564,7 +564,6 @@ function StatusLineInner({ messagesRef, lastAssistantMessageId, vimMode }: Props
             contextUsedPct={builtinContextPct}
             usedTokens={builtinUsedTokens}
             contextWindowSize={builtinContextWindowSize}
-            totalCostUsd={getTotalCost()}
             rateLimits={builtinRateLimits}
           />
           <GoalPill />

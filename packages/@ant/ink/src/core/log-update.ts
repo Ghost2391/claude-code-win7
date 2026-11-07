@@ -30,7 +30,6 @@ import {
   setScrollRegion,
 } from './termio/csi.js'
 import { LINK_END, link as oscLink } from './termio/osc.js'
-import { isLegacyWindowsConsole } from './clearTerminal.js'
 
 type State = {
   previousOutput: string
@@ -113,7 +112,12 @@ export class LogUpdate {
       next.viewport.height < prev.viewport.height ||
       (prev.viewport.width !== 0 && next.viewport.width !== prev.viewport.width)
     ) {
-      return fullResetSequence_CAUSES_FLICKER(next, 'resize', stylePool)
+      return fullResetSequence_CAUSES_FLICKER(
+        next,
+        'resize',
+        stylePool,
+        altScreen,
+      )
     }
 
     // DECSTBM scroll optimization: when a ScrollBox's scrollTop changed,
@@ -185,7 +189,12 @@ export class LogUpdate {
       logForDebugging(
         `Full reset (shrink->below): prevHeight=${prev.screen.height}, nextHeight=${next.screen.height}, viewport=${prev.viewport.height}`,
       )
-      return fullResetSequence_CAUSES_FLICKER(next, 'offscreen', stylePool)
+      return fullResetSequence_CAUSES_FLICKER(
+        next,
+        'offscreen',
+        stylePool,
+        altScreen,
+      )
     }
 
     if (
@@ -209,11 +218,17 @@ export class LogUpdate {
       if (scrollbackChangeY >= 0) {
         const prevLine = readLine(prev.screen, scrollbackChangeY)
         const nextLine = readLine(next.screen, scrollbackChangeY)
-        return fullResetSequence_CAUSES_FLICKER(next, 'offscreen', stylePool, {
-          triggerY: scrollbackChangeY,
-          prevLine,
-          nextLine,
-        })
+        return fullResetSequence_CAUSES_FLICKER(
+          next,
+          'offscreen',
+          stylePool,
+          altScreen,
+          {
+            triggerY: scrollbackChangeY,
+            prevLine,
+            nextLine,
+          },
+        )
       }
     }
 
@@ -237,6 +252,7 @@ export class LogUpdate {
           next,
           'offscreen',
           this.options.stylePool,
+          altScreen,
         )
       }
 
@@ -350,11 +366,17 @@ export class LogUpdate {
       }
     })
     if (needsFullReset) {
-      return fullResetSequence_CAUSES_FLICKER(next, 'offscreen', stylePool, {
-        triggerY: resetTriggerY,
-        prevLine: readLine(prev.screen, resetTriggerY),
-        nextLine: readLine(next.screen, resetTriggerY),
-      })
+      return fullResetSequence_CAUSES_FLICKER(
+        next,
+        'offscreen',
+        stylePool,
+        altScreen,
+        {
+          triggerY: resetTriggerY,
+          prevLine: readLine(prev.screen, resetTriggerY),
+          nextLine: readLine(next.screen, resetTriggerY),
+        },
+      )
     }
 
     // Reset styles before rendering new rows (they'll set their own styles)
@@ -474,19 +496,35 @@ function fullResetSequence_CAUSES_FLICKER(
   frame: Frame,
   reason: FlickerReason,
   stylePool: StylePool,
+  altScreen: boolean,
   debug?: { triggerY: number; prevLine: string; nextLine: string },
 ): Diff {
-  // Legacy Windows console (conhost): the normal path below emits a
-  // clearTerminal (ESC[2J — ESC[3J is dropped by libuv) then repaints the
-  // whole frame from (0,0). When the frame is taller than the viewport this
-  // scrolls, leaving the OLD frame's copy in an unclearable scrollback while a
-  // fresh copy is painted — frames stack (the duplicate-banner bug). Repaint
-  // only the visible viewport by ABSOLUTE position instead: no clear, no
-  // scroll, scrollback untouched. See legacyWindowsViewportRepaint.
-  if (isLegacyWindowsConsole()) {
-    return legacyWindowsViewportRepaint(frame, stylePool)
+  // Main screen (no alt-screen): NEVER clear.
+  //
+  // clearTerminal is ESC[2J + ESC[3J + home — it wipes the terminal's
+  // scrollback and repaints the frame from the top. In a long session the
+  // frame is taller than the viewport, so any change to a row that already
+  // scrolled into scrollback (an older message re-rendering, a shrinking
+  // layout, a resize) used to nuke the user's entire history and leave the
+  // viewport sitting at the top of the freshly painted frame. From the user's
+  // perspective the conversation "suddenly jumped back to the very
+  // beginning" — sometimes with no input at all.
+  //
+  // Instead repaint only the VISIBLE viewport by absolute position: no
+  // clear, no scroll, scrollback untouched. A user who scrolled up in the
+  // terminal keeps their position; the app repaints the rows they can see.
+  //
+  // (Historically this path was Windows-conhost-only — see the conhost
+  // quirk notes in viewportRepaint — but the scrollback wipe is a bug on
+  // every terminal.)
+  //
+  // Escape hatch: CLAUDE_CODE_FULL_CLEAR_ON_RESET=1 restores the old
+  // clear-everything behavior for terminals with broken CUP handling.
+  if (!altScreen && process.env.CLAUDE_CODE_FULL_CLEAR_ON_RESET !== '1') {
+    return viewportRepaint(frame, stylePool)
   }
-  // After clearTerminal, cursor is at (0, 0)
+  // Alt screen: there is no scrollback to preserve; the whole buffer is
+  // ours, so clear-and-repaint stays the cheapest correct option.
   const screen = new VirtualScreen({ x: 0, y: 0 }, frame.viewport.width)
   renderFrame(screen, frame, stylePool)
   return [{ type: 'clearTerminal', reason, debug }, ...screen.diff]
@@ -539,12 +577,22 @@ function buildStyledRow(
 }
 
 /**
- * Legacy Windows console repaint: redraw ONLY the visible viewport using
+ * Main-screen viewport repaint: redraw ONLY the visible viewport using
  * absolute cursor positioning (CSI row;1 H), never scrolling and never
- * touching scrollback. conhost (via libuv) drops ESC[3J, so the normal
- * clear+repaint-whole-frame path stacks old copies; and it yanks the viewport
- * on relative cursor-up into scrollback (hasCursorUpViewportYankBug), so the
- * incremental relative-move path smears. Absolute positioning sidesteps both.
+ * touching scrollback.
+ *
+ * Why every terminal needs this (not just conhost): clearing the screen for
+ * a full reset (ESC[2J + ESC[3J + home) destroys the terminal's scrollback.
+ * On a long session that erases the user's history and leaves the viewport
+ * at the top of the freshly painted frame — the "chat suddenly jumped back
+ * to the very beginning" bug. It also loses the user's scroll-back position
+ * when they were reading older output. Absolute-positioned repaint leaves
+ * scrollback intact and never moves the viewport.
+ *
+ * Original motivation on legacy Windows consoles (conhost via libuv): ESC[3J
+ * is dropped, so the clear+repaint path stacks old frame copies, and
+ * conhost yanks the viewport on relative cursor-up into scrollback, so the
+ * incremental relative-move path smears.
  *
  * The frame's bottom `viewport.height` rows map to physical rows 1..vh. Each
  * row: CSI p;1 H + styled content + ESC[K (clears any longer prior content).
@@ -563,12 +611,9 @@ function buildStyledRow(
  * cursorRestoreScroll accounting holds; otherwise park at the cursor's mapped
  * visible row/column.
  */
-// Exported for testing (the gate that reaches it, isLegacyWindowsConsole, is
-// platform-dependent; this lets tests exercise the repaint directly).
-export function legacyWindowsViewportRepaint(
-  frame: Frame,
-  stylePool: StylePool,
-): Diff {
+// Exported for testing (the gates that reach it are terminal/platform
+// dependent; this lets tests exercise the repaint directly).
+export function viewportRepaint(frame: Frame, stylePool: StylePool): Diff {
   const screen = frame.screen
   const vh = frame.viewport.height
   const sh = screen.height
@@ -603,6 +648,12 @@ export function legacyWindowsViewportRepaint(
   }
   return [{ type: 'stdout', content: out }]
 }
+
+/**
+ * @deprecated Back-compat alias — the viewport repaint is no longer
+ * Windows-console-only; main-screen full resets use it on every terminal.
+ */
+export const legacyWindowsViewportRepaint = viewportRepaint
 
 function renderFrame(
   screen: VirtualScreen,

@@ -748,12 +748,13 @@ export const SettingsSchema = lazySchema(() =>
           'Skip the WebFetch blocklist check for enterprise environments with restrictive security policies',
         ),
       webSearchAdapter: z
-        .enum(['api', 'bing', 'brave', 'exa', 'tavily'])
+        .enum(['api', 'bing', 'brave', 'duckduckgo', 'exa', 'tavily'])
         .optional()
         .describe(
           'Web search backend adapter. "tavily" uses Tavily Search API (default), ' +
             '"api" uses Anthropic server-side search, "bing" scrapes Bing HTML, ' +
-            '"brave" uses Brave Search API, "exa" uses Exa AI.',
+            '"brave" uses Brave Search API, "duckduckgo" scrapes DuckDuckGo HTML, ' +
+            '"exa" uses Exa AI.',
         ),
       webFetchAdapter: z
         .enum(['tavily', 'http'])

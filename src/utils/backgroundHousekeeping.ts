@@ -1,7 +1,6 @@
 import { feature } from 'bun:bundle'
 import { initAutoDream } from '../services/autoDream/autoDream.js'
 import { initMagicDocs } from '../services/MagicDocs/magicDocs.js'
-import { initSkillImprovement } from './hooks/skillImprovement.js'
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 const registerProtocolModule = feature('LODESTONE')
@@ -27,7 +26,6 @@ const DELAY_VERY_SLOW_OPERATIONS_THAT_HAPPEN_EVERY_SESSION = 10 * 60 * 1000
 
 export function startBackgroundHousekeeping(): void {
   void initMagicDocs()
-  void initSkillImprovement()
   if (feature('EXTRACT_MEMORIES')) {
     void import('../services/extractMemories/extractMemories.js')
       .then(({ initExtractMemories }) => {

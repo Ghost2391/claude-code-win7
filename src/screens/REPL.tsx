@@ -32,7 +32,6 @@ import {
   useTerminalTitle,
   useTabStatus,
 } from '@anthropic/ink';
-import { CostThresholdDialog } from '../components/CostThresholdDialog.js';
 import { IdleReturnDialog } from '../components/IdleReturnDialog.js';
 import * as React from 'react';
 import {
@@ -138,8 +137,6 @@ import type { DirectConnectConfig } from '../server/directConnectManager.js';
 import { useSSHSession } from '../hooks/useSSHSession.js';
 import { useAssistantHistory } from '../hooks/useAssistantHistory.js';
 import type { SSHSession } from '../ssh/createSSHSession.js';
-import { SkillImprovementSurvey } from '../components/SkillImprovementSurvey.js';
-import { useSkillImprovementSurvey } from '../hooks/useSkillImprovementSurvey.js';
 import { useMoreRight } from '../moreright/useMoreRight.js';
 import { SpinnerWithVerb, BriefIdleStatus, type SpinnerMode } from '../components/Spinner.js';
 import { getSystemPrompt } from '../constants/prompts.js';
@@ -147,8 +144,7 @@ import { buildEffectiveSystemPrompt } from '../utils/systemPrompt.js';
 import { getSystemContext, getUserContext } from '../context.js';
 import { getMemoryFiles } from '../utils/claudemd.js';
 import { startBackgroundHousekeeping } from '../utils/backgroundHousekeeping.js';
-import { getTotalCost, saveCurrentSessionCosts, resetCostState, getStoredSessionCosts } from '../cost-tracker.js';
-import { useCostSummary } from '../costHook.js';
+import { saveCurrentSessionCosts, resetCostState, getStoredSessionCosts } from '../cost-tracker.js';
 import { useFpsMetrics } from '../context/fpsMetrics.js';
 import { useAfterFirstRender } from '../hooks/useAfterFirstRender.js';
 import { useDeferredHookMessages } from '../hooks/useDeferredHookMessages.js';
@@ -183,13 +179,6 @@ const VoiceKeybindingHandler: typeof import('../hooks/useVoiceIntegration.js').V
 )
   ? require('../hooks/useVoiceIntegration.js').VoiceKeybindingHandler
   : () => null;
-// Frustration detection is ant-only (dogfooding). Conditional require so external
-// builds eliminate the module entirely (including its two O(n) useMemos that run
-// on every messages change, plus the GrowthBook fetch).
-const useFrustrationDetection: typeof import('../components/FeedbackSurvey/useFrustrationDetection.js').useFrustrationDetection =
-  process.env.USER_TYPE === 'ant'
-    ? require('../components/FeedbackSurvey/useFrustrationDetection.js').useFrustrationDetection
-    : () => ({ state: 'closed', handleTranscriptSelect: () => {} });
 // Ant-only org warning. Conditional require so the org UUID list is
 // eliminated from external builds (one UUID is on excluded-strings).
 const useAntOrgWarningNotification: typeof import('../hooks/notifs/useAntOrgWarningNotification.js').useAntOrgWarningNotification =
@@ -220,7 +209,6 @@ import { SLEEP_TOOL_NAME } from '@claude-code-best/builtin-tools/tools/SleepTool
 import { clearSpeculativeChecks } from '@claude-code-best/builtin-tools/tools/BashTool/bashPermissions.js';
 import type { AutoUpdaterResult } from '../utils/autoUpdater.js';
 import { getGlobalConfig, saveGlobalConfig, getGlobalConfigWriteCount } from '../utils/config.js';
-import { hasConsoleBillingAccess } from '../utils/billing.js';
 import {
   logEvent,
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -421,10 +409,6 @@ const UndercoverAutoCallout =
 import { activityManager } from '../utils/activityManager.js';
 import { createAbortController } from '../utils/abortController.js';
 import { MCPConnectionManager } from 'src/services/mcp/MCPConnectionManager.js';
-import { useFeedbackSurvey } from 'src/components/FeedbackSurvey/useFeedbackSurvey.js';
-import { useMemorySurvey } from 'src/components/FeedbackSurvey/useMemorySurvey.js';
-import { usePostCompactSurvey } from 'src/components/FeedbackSurvey/usePostCompactSurvey.js';
-import { FeedbackSurvey } from 'src/components/FeedbackSurvey/FeedbackSurvey.js';
 import { useInstallMessages } from 'src/hooks/notifs/useInstallMessages.js';
 import { useAwaySummary } from 'src/hooks/useAwaySummary.js';
 import { useChromeExtensionNotification } from 'src/hooks/useChromeExtensionNotification.js';
@@ -468,13 +452,6 @@ import { useModelMigrationNotifications } from 'src/hooks/notifs/useModelMigrati
 import { useCanSwitchToExistingSubscription } from 'src/hooks/notifs/useCanSwitchToExistingSubscription.js';
 import { useTeammateLifecycleNotification } from 'src/hooks/notifs/useTeammateShutdownNotification.js';
 import { useFastModeNotification } from 'src/hooks/notifs/useFastModeNotification.js';
-import {
-  AutoRunIssueNotification,
-  shouldAutoRunIssue,
-  getAutoRunIssueReasonText,
-  getAutoRunCommand,
-  type AutoRunIssueReason,
-} from '../utils/autoRunIssue.js';
 import type { HookProgress } from '../types/hooks.js';
 import { TungstenLiveMonitor } from '@claude-code-best/builtin-tools/tools/TungstenTool/TungstenLiveMonitor.js';
 // WebBrowserPanel removed — browser-lite returns results inline via tool_result.
@@ -1818,7 +1795,6 @@ export function REPL({
   const [spinnerShimmerColor, setSpinnerShimmerColor] = useState<keyof Theme | null>(null);
   const [isMessageSelectorVisible, setIsMessageSelectorVisible] = useState(false);
   const [messageSelectorPreselect, setMessageSelectorPreselect] = useState<UserMessage | undefined>(undefined);
-  const [showCostDialog, setShowCostDialog] = useState(false);
   const [conversationId, setConversationId] = useState(randomUUID());
 
   // Idle-return dialog: shown when user submits after a long idle gap
@@ -1848,7 +1824,6 @@ export function REPL({
     contentReplacementStateRef.current = createContentReplacementState();
   });
 
-  const [haveShownCostDialog, setHaveShownCostDialog] = useState(getGlobalConfig().hasAcknowledgedCostThreshold);
   const [vimMode, setVimMode] = useState<VimMode>('INSERT');
   const [showBashesDialog, setShowBashesDialog] = useState<string | boolean>(false);
   const [isSearchingHistory, setIsSearchingHistory] = useState(false);
@@ -2062,55 +2037,7 @@ export function REPL({
     // but keep it when isBriefOnly suppresses the streaming text display
     (!visibleStreamingText || isBriefOnly);
 
-  // Check if any permission or ask question prompt is currently visible
-  // This is used to prevent the survey from opening while prompts are active
-  const hasActivePrompt =
-    toolUseConfirmQueue.length > 0 ||
-    promptQueue.length > 0 ||
-    sandboxPermissionRequestQueue.length > 0 ||
-    elicitation.queue.length > 0 ||
-    workerSandboxPermissions.queue.length > 0;
-
-  const feedbackSurveyOriginal = useFeedbackSurvey(messages, isLoading, submitCount, 'session', hasActivePrompt);
-
-  const skillImprovementSurvey = useSkillImprovementSurvey(setMessages);
-
   const showIssueFlagBanner = useIssueFlagBanner(messages, submitCount);
-
-  // Wrap feedback survey handler to trigger auto-run /issue
-  const feedbackSurvey = useMemo(
-    () => ({
-      ...feedbackSurveyOriginal,
-      handleSelect: (selected: 'dismissed' | 'bad' | 'fine' | 'good') => {
-        // Reset the ref when a new survey response comes in
-        didAutoRunIssueRef.current = false;
-        const showedTranscriptPrompt = feedbackSurveyOriginal.handleSelect(selected);
-        // Auto-run /issue for "bad" if transcript prompt wasn't shown
-        if (selected === 'bad' && !showedTranscriptPrompt && shouldAutoRunIssue('feedback_survey_bad')) {
-          setAutoRunIssueReason('feedback_survey_bad');
-          didAutoRunIssueRef.current = true;
-        }
-      },
-    }),
-    [feedbackSurveyOriginal],
-  );
-
-  // Post-compact survey: shown after compaction if feature gate is enabled
-  const postCompactSurvey = usePostCompactSurvey(messages, isLoading, hasActivePrompt, { enabled: !isRemoteSession });
-
-  // Memory survey: shown when the assistant mentions memory and a memory file
-  // was read this conversation
-  const memorySurvey = useMemorySurvey(messages, isLoading, hasActivePrompt, {
-    enabled: !isRemoteSession,
-  });
-
-  // Frustration detection: show transcript sharing prompt after detecting frustrated messages
-  const frustrationDetection = useFrustrationDetection(
-    messages,
-    isLoading,
-    hasActivePrompt,
-    feedbackSurvey.state !== 'closed' || postCompactSurvey.state !== 'closed' || memorySurvey.state !== 'closed',
-  );
 
   // Initialize IDE integration
   useIDEIntegration({
@@ -2402,19 +2329,9 @@ export function REPL({
 
   const { status: apiKeyStatus, reverify } = useApiKeyVerification();
 
-  // Auto-run /issue state
-  const [autoRunIssueReason, setAutoRunIssueReason] = useState<AutoRunIssueReason | null>(null);
-  // Ref to track if autoRunIssue was triggered this survey cycle,
-  // so we can suppress the [1] follow-up prompt even after
-  // autoRunIssueReason is cleared.
-  const didAutoRunIssueRef = useRef(false);
-
   // State for exit feedback flow
   const [exitFlow, setExitFlow] = useState<React.ReactNode>(null);
   const [isExiting, setIsExiting] = useState(false);
-
-  // Calculate if cost dialog should be shown
-  const showingCostDialog = !isLoading && showCostDialog;
 
   // Determine which dialog should have focus (if any)
   // Permission and interactive dialogs can show even when toolJSX is set,
@@ -2427,7 +2344,6 @@ export function REPL({
     | 'prompt'
     | 'worker-sandbox-permission'
     | 'elicitation'
-    | 'cost'
     | 'idle-return'
     | 'init-onboarding'
     | 'ide-onboarding'
@@ -2461,7 +2377,6 @@ export function REPL({
     // Worker sandbox permission prompts (network access) from swarm workers
     if (allowDialogsWithAnimation && workerSandboxPermissions.queue[0]) return 'worker-sandbox-permission';
     if (allowDialogsWithAnimation && elicitation.queue[0]) return 'elicitation';
-    if (allowDialogsWithAnimation && showingCostDialog) return 'cost';
     if (allowDialogsWithAnimation && idleReturnPending) return 'idle-return';
 
     if (feature('ULTRAPLAN') && allowDialogsWithAnimation && !isLoading && ultraplanPendingChoice)
@@ -2510,8 +2425,7 @@ export function REPL({
       toolUseConfirmQueue[0] ||
       promptQueue[0] ||
       workerSandboxPermissions.queue[0] ||
-      elicitation.queue[0] ||
-      showingCostDialog);
+      elicitation.queue[0]);
 
   // Keep ref in sync so timer callbacks can read the current value
   focusedInputDialogRef.current = focusedInputDialog;
@@ -2685,20 +2599,6 @@ export function REPL({
     inputValue,
     streamMode,
   };
-
-  useEffect(() => {
-    const totalCost = getTotalCost();
-    if (totalCost >= 5 /* $5 */ && !showCostDialog && !haveShownCostDialog) {
-      logEvent('tengu_cost_threshold_reached', {});
-      // Mark as shown even if the dialog won't render (no console billing
-      // access). Otherwise this effect re-fires on every message change for
-      // the rest of the session — 200k+ spurious events observed.
-      setHaveShownCostDialog(true);
-      if (hasConsoleBillingAccess()) {
-        setShowCostDialog(true);
-      }
-    }
-  }, [messages, showCostDialog, haveShownCostDialog]);
 
   const sandboxAskCallback: SandboxAskCallback = useCallback(
     async (hostPattern: NetworkHostPattern) => {
@@ -4431,7 +4331,7 @@ export function REPL({
       // keep onSubmit stable across message updates (see L2384/L2400/L2662).
       // Without this, each setMessages call (~30× per turn) recreates
       // onSubmit, pinning the REPL render scope (1776B) + that render's
-      // messages array in downstream closures (PromptInput, handleAutoRunIssue).
+      // messages array in downstream closures (PromptInput, etc.).
       // Heap analysis showed ~9 REPL scopes and ~15 messages array versions
       // accumulating after #20174/#20175, all traced to this dep.
       mainLoopModel,
@@ -4484,35 +4384,6 @@ export function REPL({
     },
     [setAppState, setInputValue, getToolUseContext, canUseTool, mainLoopModel, addNotification],
   );
-
-  // Handlers for auto-run /issue or /good-claude (defined after onSubmit)
-  const handleAutoRunIssue = useCallback(() => {
-    const command = autoRunIssueReason ? getAutoRunCommand(autoRunIssueReason) : '/issue';
-    setAutoRunIssueReason(null); // Clear the state
-    onSubmit(command, {
-      setCursorOffset: () => {},
-      clearBuffer: () => {},
-      resetHistory: () => {},
-    }).catch(err => {
-      logForDebugging(`Auto-run ${command} failed: ${errorMessage(err)}`);
-    });
-  }, [onSubmit, autoRunIssueReason]);
-
-  const handleCancelAutoRunIssue = useCallback(() => {
-    setAutoRunIssueReason(null);
-  }, []);
-
-  // Handler for when user presses 1 on survey thanks screen to share details
-  const handleSurveyRequestFeedback = useCallback(() => {
-    const command = process.env.USER_TYPE === 'ant' ? '/issue' : '/feedback';
-    onSubmit(command, {
-      setCursorOffset: () => {},
-      clearBuffer: () => {},
-      resetHistory: () => {},
-    }).catch(err => {
-      logForDebugging(`Survey feedback request failed: ${err instanceof Error ? err.message : String(err)}`);
-    });
-  }, [onSubmit]);
 
   // onSubmit is unstable (deps include `messages` which changes every turn).
   // `handleOpenRateLimitOptions` is prop-drilled to every MessageRow, and each
@@ -4756,7 +4627,6 @@ export function REPL({
   }
 
   // Register cost summary tracker
-  useCostSummary(useFpsMetrics());
 
   // Record transcripts locally, for debugging and conversation recovery
   // Don't record conversation if we only have initial messages; optimizes
@@ -6210,19 +6080,6 @@ export function REPL({
                     }}
                   />
                 )}
-                {focusedInputDialog === 'cost' && (
-                  <CostThresholdDialog
-                    onDone={() => {
-                      setShowCostDialog(false);
-                      setHaveShownCostDialog(true);
-                      saveGlobalConfig(current => ({
-                        ...current,
-                        hasAcknowledgedCostThreshold: true,
-                      }));
-                      logEvent('tengu_cost_threshold_acknowledged', {});
-                    }}
-                  />
-                )}
                 {focusedInputDialog === 'idle-return' && idleReturnPending && (
                   <IdleReturnDialog
                     idleMinutes={idleReturnPending.idleMinutes}
@@ -6437,66 +6294,6 @@ export function REPL({
 
                 {!toolJSX?.shouldHidePromptInput && !focusedInputDialog && !isExiting && !disabled && !cursor && (
                   <>
-                    {autoRunIssueReason && (
-                      <AutoRunIssueNotification
-                        onRun={handleAutoRunIssue}
-                        onCancel={handleCancelAutoRunIssue}
-                        reason={getAutoRunIssueReasonText(autoRunIssueReason)}
-                      />
-                    )}
-                    {postCompactSurvey.state !== 'closed' ? (
-                      <FeedbackSurvey
-                        state={postCompactSurvey.state}
-                        lastResponse={postCompactSurvey.lastResponse}
-                        handleSelect={postCompactSurvey.handleSelect}
-                        inputValue={inputValue}
-                        setInputValue={setInputValue}
-                        onRequestFeedback={handleSurveyRequestFeedback}
-                      />
-                    ) : memorySurvey.state !== 'closed' ? (
-                      <FeedbackSurvey
-                        state={memorySurvey.state}
-                        lastResponse={memorySurvey.lastResponse}
-                        handleSelect={memorySurvey.handleSelect}
-                        handleTranscriptSelect={memorySurvey.handleTranscriptSelect}
-                        inputValue={inputValue}
-                        setInputValue={setInputValue}
-                        onRequestFeedback={handleSurveyRequestFeedback}
-                        message="How well did Claude use its memory? (optional)"
-                      />
-                    ) : (
-                      <FeedbackSurvey
-                        state={feedbackSurvey.state}
-                        lastResponse={feedbackSurvey.lastResponse}
-                        handleSelect={feedbackSurvey.handleSelect}
-                        handleTranscriptSelect={feedbackSurvey.handleTranscriptSelect}
-                        inputValue={inputValue}
-                        setInputValue={setInputValue}
-                        onRequestFeedback={didAutoRunIssueRef.current ? undefined : handleSurveyRequestFeedback}
-                      />
-                    )}
-                    {/* Frustration-triggered transcript sharing prompt */}
-                    {frustrationDetection.state !== 'closed' && (
-                      <FeedbackSurvey
-                        state={frustrationDetection.state}
-                        lastResponse={null}
-                        handleSelect={() => {}}
-                        handleTranscriptSelect={frustrationDetection.handleTranscriptSelect}
-                        inputValue={inputValue}
-                        setInputValue={setInputValue}
-                      />
-                    )}
-                    {/* Skill improvement survey - appears when improvements detected */}
-                    {skillImprovementSurvey.suggestion && (
-                      <SkillImprovementSurvey
-                        isOpen={skillImprovementSurvey.isOpen}
-                        skillName={skillImprovementSurvey.suggestion.skillName}
-                        updates={skillImprovementSurvey.suggestion.updates}
-                        handleSelect={skillImprovementSurvey.handleSelect}
-                        inputValue={inputValue}
-                        setInputValue={setInputValue}
-                      />
-                    )}
                     {showIssueFlagBanner && <IssueFlagBanner />}
                     {}
                     <PromptInput

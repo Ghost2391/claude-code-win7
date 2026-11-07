@@ -16,6 +16,11 @@
  *
  * Usage:  bun run build:binary            # Linux x64
  *         bun run build:binary -- --target=bun-windows-x64
+ *
+ * Cross-compiling downloads the target's Bun runtime from GitHub. Behind a
+ * proxy/firewall that blocks it, fetch `bun-<target>.zip` from a mirror
+ * (e.g. https://registry.npmmirror.com/-/binary/bun/bun-v<version>/),
+ * extract it, and point BUN_COMPILE_EXECUTABLE_PATH at the `bun` binary.
  */
 
 import { cp, mkdir, rm, stat } from 'node:fs/promises'
@@ -53,6 +58,10 @@ console.log(
   `[build:binary] Compiling ${binName} (target=${target}, features: ${features.length}) …`,
 )
 
+// Optional offline/mirror path for cross-compilation: use a local target
+// runtime instead of downloading one from GitHub (see header).
+const executablePath = process.env.BUN_COMPILE_EXECUTABLE_PATH
+
 const result = await Bun.build({
   entrypoints: [join(root, 'src/entrypoints/cli.tsx')],
   outdir,
@@ -66,7 +75,7 @@ const result = await Bun.build({
     'process.env.NODE_ENV': JSON.stringify('production'),
   },
   features,
-  compile: true,
+  compile: executablePath ? { executablePath, outfile: binPath } : true,
 })
 
 if (!result.success) {

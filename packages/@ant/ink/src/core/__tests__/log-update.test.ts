@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { isLegacyWindowsConsole } from '../clearTerminal.js'
 import type { Diff, Frame } from '../frame.js'
-import { legacyWindowsViewportRepaint } from '../log-update.js'
+import { LogUpdate, legacyWindowsViewportRepaint } from '../log-update.js'
 import {
   CellWidth,
   CharPool,
@@ -136,6 +136,67 @@ describe('legacyWindowsViewportRepaint', () => {
     const diff = legacyWindowsViewportRepaint(frame, stylePool)
     expect(diff.every(patch => patch.type !== 'clearTerminal')).toBe(true)
   })
+
+  test('main-screen full reset repaints the viewport instead of clearing scrollback', () => {
+    // Regression: a full reset used to emit ESC[2J/ESC[3J + home, wiping the
+    // terminal scrollback and yanking the viewport to the top of the
+    // repainted frame ("chat jumped back to the beginning").
+    const { prev, next, stylePool } = makeScrollbackChangeFrames()
+    const log = new LogUpdate({ isTTY: true, stylePool })
+
+    // A change on row 0 — long since scrolled off the 5-row viewport.
+    const diff = log.render(prev, next, false)
+
+    expect(diff.some(patch => patch.type === 'clearTerminal')).toBe(false)
+    const text = diff
+      .filter(
+        (patch): patch is { type: 'stdout'; content: string } =>
+          patch.type === 'stdout',
+      )
+      .map(patch => patch.content)
+      .join('')
+    expect(text.includes(ERASE_SCREEN)).toBe(false)
+    // Absolute repaint of the visible viewport (frame rows 15..19 → 1..5).
+    expect(text).toContain(cup(1, 1))
+    expect(text).toContain(cup(5, 1))
+  })
+
+  test('alt-screen full reset still clears (no scrollback to preserve)', () => {
+    const { prev, next, stylePool } = makeScrollbackChangeFrames()
+    const log = new LogUpdate({ isTTY: true, stylePool })
+
+    const diff = log.render(prev, next, true)
+
+    expect(diff.some(patch => patch.type === 'clearTerminal')).toBe(true)
+  })
+
+  /** 20-row frame, 5-row viewport, one cell changed in scrollback (row 0). */
+  function makeScrollbackChangeFrames(): {
+    prev: Frame
+    next: Frame
+    stylePool: StylePool
+  } {
+    const stylePool = new StylePool()
+    // Shared pools: the cell diff compares packed (charIndex, style) words, so
+    // the two frames must resolve characters through the same CharPool.
+    const charPool = new CharPool()
+    const hyperlinkPool = new HyperlinkPool()
+    const make = (char: string): Frame => {
+      const screen = createScreen(10, 20, stylePool, charPool, hyperlinkPool)
+      setCellAt(screen, 0, 0, {
+        char,
+        styleId: stylePool.none,
+        width: CellWidth.Narrow,
+        hyperlink: undefined,
+      })
+      return {
+        screen,
+        viewport: { width: 10, height: 5 },
+        cursor: { x: 0, y: 20, visible: true },
+      }
+    }
+    return { prev: make('A'), next: make('B'), stylePool }
+  }
 
   test('frame shorter than viewport: blanks the rows below content, no scroll', () => {
     // screen 10x3, viewport 10x5 → rows 4 and 5 are below content and cleared.

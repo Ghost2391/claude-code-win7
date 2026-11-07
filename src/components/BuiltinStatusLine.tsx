@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { formatCost } from '../cost-tracker.js';
 import { Box, Text } from '@anthropic/ink';
 import { formatTokens } from '../utils/format.js';
 import { useTerminalSize } from '../hooks/useTerminalSize.js';
@@ -14,7 +13,6 @@ type BuiltinStatusLineProps = {
   contextUsedPct: number;
   usedTokens: number;
   contextWindowSize: number;
-  totalCostUsd: number;
   rateLimits: {
     five_hour?: RateLimitBucket;
     seven_day?: RateLimitBucket;
@@ -47,7 +45,6 @@ function BuiltinStatusLineInner({
   contextUsedPct,
   usedTokens,
   contextWindowSize,
-  totalCostUsd,
   rateLimits,
 }: BuiltinStatusLineProps) {
   const { columns } = useTerminalSize();
@@ -111,14 +108,6 @@ function BuiltinStatusLineInner({
           {!narrow && rateLimits.seven_day!.resets_at > 0 && (
             <Text dimColor> {formatCountdown(rateLimits.seven_day!.resets_at)}</Text>
           )}
-        </>
-      )}
-
-      {/* Cost */}
-      {totalCostUsd > 0 && (
-        <>
-          <Separator />
-          <Text>{formatCost(totalCostUsd)}</Text>
         </>
       )}
     </Box>

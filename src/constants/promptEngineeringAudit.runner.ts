@@ -9,6 +9,7 @@
  * 只能通过最终输出间接验证。
  */
 
+import { growthbookMock } from '../../tests/mocks/growthbook'
 import { describe, test, expect, mock, beforeEach } from 'bun:test'
 
 // --- MACRO 全局注入 (编译时 define 在测试中不可用) ---
@@ -93,9 +94,7 @@ mock.module('src/memdir/memdir.js', () => ({
 mock.module('src/utils/debug.js', () => ({
   logForDebugging: () => {},
 }))
-mock.module('src/services/analytics/growthbook.js', () => ({
-  getFeatureValue_CACHED_MAY_BE_STALE: () => false,
-}))
+mock.module('src/services/analytics/growthbook.js', () => growthbookMock())
 mock.module('bun:bundle', () => ({
   feature: (_name: string) => false,
 }))

@@ -3567,9 +3567,6 @@ async function run(): Promise<CommanderCommand> {
         },
         speculation: IDLE_SPECULATION_STATE,
         speculationSessionTimeSavedMs: 0,
-        skillImprovement: {
-          suggestion: null,
-        },
         workerSandboxPermissions: {
           queue: [],
           selectedIndex: 0,

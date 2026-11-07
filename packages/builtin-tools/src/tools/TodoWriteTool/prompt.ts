@@ -182,3 +182,25 @@ When in doubt, use this tool. Being proactive with task management demonstrates 
 
 export const DESCRIPTION =
   'Update the todo list for the current session. To be used proactively and often to track progress and pending tasks. Make sure that at least one task is in_progress at all times. Always provide both content (imperative) and activeForm (present continuous) for each task.'
+
+/**
+ * Compact variant: PROMPT minus the worked-example blocks.
+ *
+ * Used when the Todo-V2 task tools (TaskCreate/TaskUpdate/...) are also in the
+ * tool list — the examples exist to teach *when* to track work, which the task
+ * tools teach independently. Keeping both full descriptions costs ~2.6k tokens
+ * per request and gives the model two competing task systems.
+ *
+ * Derived from PROMPT (not hand-maintained) so wording stays in sync. Static
+ * for a session (isTodoV2Enabled is config-driven), so the cached tools prefix
+ * doesn't churn.
+ */
+export const COMPACT_PROMPT = PROMPT.replace(
+  /<example>[\s\S]*?<\/example>/g,
+  '',
+)
+  // Drop section headers that existed only to introduce the examples.
+  .replace(/## Examples of When to Use the Todo List\s*\n\s*/g, '')
+  .replace(/## Examples of When NOT to Use the Todo List\s*\n\s*/g, '')
+  .replace(/\n{3,}/g, '\n\n')
+  .trimEnd()

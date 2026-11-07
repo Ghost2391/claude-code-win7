@@ -1,3 +1,4 @@
+import { growthbookMock } from '../../../../tests/mocks/growthbook'
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 
 // Mock bun:bundle before any imports that use feature()
@@ -28,10 +29,12 @@ mock.module('src/utils/settings/settings.js', () => ({
 
 // Mock analytics (GrowthBook) — required for isEnabled()
 let gbValue = true
-mock.module('src/services/analytics/growthbook.js', () => ({
-  getFeatureValue_CACHED_MAY_BE_STALE: (_key: string, defaultVal: unknown) =>
-    gbValue ?? defaultVal,
-}))
+mock.module('src/services/analytics/growthbook.js', () =>
+  growthbookMock({
+    getFeatureValue_CACHED_MAY_BE_STALE: (_key: string, defaultVal: unknown) =>
+      gbValue ?? defaultVal,
+  }),
+)
 
 // Mock the forkedAgent utility used by generateRecap
 let mockRecapResult: {
