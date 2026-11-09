@@ -1,0 +1,2 @@
+dist/claude.exe filter=lfs diff=lfs merge=lfs -text
+dist/claude filter=lfs diff=lfs merge=lfs -text

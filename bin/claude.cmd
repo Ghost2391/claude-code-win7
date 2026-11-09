@@ -1,5 +1,5 @@
 @echo off
-rem Convenience launcher for Claude Code Win7
+rem Convenience launcher for Claude Code
 rem Delegates to dist\claude.cmd
 
 set "SCRIPT_DIR=%~dp0"

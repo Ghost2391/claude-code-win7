@@ -8,6 +8,7 @@ import { resolveAntModel } from './model/antModels.js'
 import { getModelCapability } from './model/modelCapabilities.js'
 import {
   type ProviderProfile,
+  getActiveProviderProfileId,
   profileMatchesModel,
 } from './model/providerProfiles.js'
 
@@ -191,9 +192,12 @@ export function getContextWindowForModel(
   // model (two profiles may declare the same model name; the session is
   // running on the active provider's endpoint), then any other profile that
   // declares it — e.g. a model picked from another provider in /model.
+  // Resolve the active id through the session pin, not the shared settings
+  // file: another running session may have just switched profiles there.
+  const activeProfileId = getActiveProviderProfileId()
   const profileWindow = resolveProfileContextWindow(
     profileSettings.providerProfiles,
-    profileSettings.activeProviderProfile,
+    activeProfileId,
     model,
   )
   if (profileWindow) return profileWindow
@@ -201,7 +205,7 @@ export function getContextWindowForModel(
   // 6. Active provider profile fallback: apply profile-level contextWindow
   // for models this profile doesn't declare.
   const activeProfile = profileSettings.providerProfiles?.find(
-    p => p.id === profileSettings.activeProviderProfile,
+    p => p.id === activeProfileId,
   )
   if (activeProfile?.contextWindow) {
     const parsed = parseContextWindowSize(activeProfile.contextWindow)

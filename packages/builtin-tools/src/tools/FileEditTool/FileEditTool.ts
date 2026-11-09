@@ -14,6 +14,7 @@ import {
 import type { ToolUseContext } from 'src/Tool.js'
 import { buildTool, type ToolDef } from 'src/Tool.js'
 import { getCwd } from 'src/utils/cwd.js'
+import { formatFileAfterWrite } from 'src/utils/autoFormat.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { countLinesChanged } from 'src/utils/diff.js'
 import { isEnvTruthy } from 'src/utils/envUtils.js'
@@ -479,6 +480,12 @@ export const FileEditTool = buildTool({
     // 5. Write to disk
     writeTextContent(absoluteFilePath, updatedFile, encoding, endings)
 
+    // Post-write formatter (opt-in). Runs before the LSP didChange below so
+    // the language server sees the formatted content. Never throws; a
+    // formatter that failed or removed the file just leaves `formatted`
+    // false or `content` undefined, and the edit still counts as success.
+    const formatResult = await formatFileAfterWrite(absoluteFilePath)
+
     // Notify LSP servers about file modification (didChange) and save (didSave)
     const lspManager = getLspServerManager()
     if (lspManager) {
@@ -505,13 +512,20 @@ export const FileEditTool = buildTool({
     // Notify VSCode about the file change for diff view
     notifyVscodeFileUpdated(absoluteFilePath, originalFileContents, updatedFile)
 
-    // 6. Update read timestamp, to invalidate stale writes
-    readFileState.set(absoluteFilePath, {
-      content: updatedFile,
-      timestamp: getFileModificationTime(absoluteFilePath),
-      offset: undefined,
-      limit: undefined,
-    })
+    // 6. Update read timestamp, to invalidate stale writes. When a formatter
+    // rewrote the file, use the on-disk content so the cache matches.
+    // A formatter that removed the file leaves nothing to stat: drop the
+    // cache entry instead of failing an edit that already succeeded.
+    try {
+      readFileState.set(absoluteFilePath, {
+        content: formatResult.content ?? updatedFile,
+        timestamp: getFileModificationTime(absoluteFilePath),
+        offset: undefined,
+        limit: undefined,
+      })
+    } catch {
+      readFileState.delete(absoluteFilePath)
+    }
 
     // 7. Log events
     if (absoluteFilePath.endsWith(`${sep}CLAUDE.md`)) {

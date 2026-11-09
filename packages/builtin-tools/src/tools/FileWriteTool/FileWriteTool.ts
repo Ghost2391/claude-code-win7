@@ -15,6 +15,7 @@ import {
 import type { ToolUseContext } from 'src/Tool.js'
 import { buildTool, type ToolDef } from 'src/Tool.js'
 import { getCwd } from 'src/utils/cwd.js'
+import { formatFileAfterWrite } from 'src/utils/autoFormat.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { countLinesChanged, getPatchForDisplay } from 'src/utils/diff.js'
 import { isEnvTruthy } from 'src/utils/envUtils.js'
@@ -305,6 +306,12 @@ export const FileWriteTool = buildTool({
     // overwriting a CRLF file or when binaries in cwd poisoned the repo sample.
     writeTextContent(fullFilePath, content, enc, 'LF')
 
+    // Post-write formatter (opt-in). Runs before the LSP didChange below so
+    // the language server sees the formatted content. Never throws; a
+    // formatter that failed or removed the file just leaves `formatted`
+    // false or `content` undefined, and the write still counts as success.
+    const formatResult = await formatFileAfterWrite(fullFilePath)
+
     // Notify LSP servers about file modification (didChange) and save (didSave)
     const lspManager = getLspServerManager()
     if (lspManager) {
@@ -329,13 +336,21 @@ export const FileWriteTool = buildTool({
     // Notify VSCode about the file change for diff view
     notifyVscodeFileUpdated(fullFilePath, oldContent, content)
 
-    // Update read timestamp, to invalidate stale writes
-    readFileState.set(fullFilePath, {
-      content,
-      timestamp: getFileModificationTime(fullFilePath),
-      offset: undefined,
-      limit: undefined,
-    })
+    // Update read timestamp, to invalidate stale writes. When a formatter
+    // rewrote the file, use the on-disk content so the cache matches —
+    // otherwise the next Edit's staleness check would flag our own write.
+    // A formatter that removed the file leaves nothing to stat: drop the
+    // cache entry instead of failing a write that already succeeded.
+    try {
+      readFileState.set(fullFilePath, {
+        content: formatResult.content ?? content,
+        timestamp: getFileModificationTime(fullFilePath),
+        offset: undefined,
+        limit: undefined,
+      })
+    } catch {
+      readFileState.delete(fullFilePath)
+    }
 
     // Log when writing to CLAUDE.md
     if (fullFilePath.endsWith(`${sep}CLAUDE.md`)) {

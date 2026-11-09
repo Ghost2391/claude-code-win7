@@ -462,6 +462,13 @@ export const SettingsSchema = lazySchema(() =>
         .describe(
           'Override context window size in tokens, or a string like "128k", "200k", "1m"',
         ),
+      autoFormat: z
+        .boolean()
+        .optional()
+        .describe(
+          'Run the project formatter (biome/prettier/gofmt/rustfmt/ruff) on files ' +
+            'after Write/Edit. Off by default; also settable via CLAUDE_CODE_AUTO_FORMAT=1.',
+        ),
       // Enterprise allowlist of models
       availableModels: z
         .array(z.string())

@@ -16,6 +16,12 @@ mock.module('src/utils/settings/settings.js', () => ({
   },
 }))
 
+// Load once, after the mocks above. The import chain is heavy (it pulls in the
+// API clients); doing it per-test hits bun's 5s hook timeout on the first test.
+const { resetSessionProviderProfileForTesting } = await import(
+  '../providerProfiles.js'
+)
+
 const envKeys = [
   'ANTHROPIC_BASE_URL',
   'OPENAI_BASE_URL',
@@ -36,6 +42,7 @@ const savedEnv: Record<string, string | undefined> = {}
 
 beforeEach(() => {
   stored = {}
+  resetSessionProviderProfileForTesting()
   for (const key of envKeys) {
     savedEnv[key] = process.env[key]
     delete process.env[key]
@@ -267,5 +274,81 @@ describe('providerProfiles', () => {
     expect(getActiveProviderProfileId()).toBe(id)
     expect(process.env.OPENAI_BASE_URL).toBe('https://switched.example.com')
     expect(process.env.OPENAI_API_KEY).toBe('sk-switched')
+  })
+
+  // Regression: two terminals share ~/.claude/settings.json. Session A
+  // switching profile writes activeProviderProfile, and session B's settings
+  // watcher re-materializes the env from that file. Without a session pin,
+  // B's process.env flipped to A's provider while B's in-memory model
+  // override still belonged to B's provider — requests then carried B's model
+  // name to A's endpoint ("model does not exist").
+  test('materialize ignores a profile switch made by another session', async () => {
+    const {
+      saveProviderProfile,
+      materializeActiveProvider,
+      getActiveProviderProfileId,
+      getProfileModelType,
+    } = await import('../providerProfiles.js')
+
+    const a = saveProviderProfile({
+      name: 'ProviderA',
+      modelType: 'openai',
+      baseURL: 'https://a.example.com',
+      apiKey: 'sk-a',
+      sonnetModel: 'a-model',
+    })
+    const b = saveProviderProfile({
+      name: 'ProviderB',
+      modelType: 'openai',
+      baseURL: 'https://b.example.com',
+      apiKey: 'sk-b',
+      sonnetModel: 'b-model',
+    })
+
+    // Session startup: A is the persisted active profile.
+    stored.activeProviderProfile = a
+    materializeActiveProvider()
+    expect(process.env.OPENAI_BASE_URL).toBe('https://a.example.com')
+
+    // Another session switches to B in the shared settings file, and this
+    // session's file watcher re-applies the environment.
+    stored.activeProviderProfile = b
+    materializeActiveProvider()
+
+    expect(getActiveProviderProfileId()).toBe(a)
+    expect(process.env.OPENAI_BASE_URL).toBe('https://a.example.com')
+    expect(process.env.OPENAI_API_KEY).toBe('sk-a')
+    expect(process.env.OPENAI_DEFAULT_SONNET_MODEL).toBe('a-model')
+    expect(getProfileModelType()).toBe('openai')
+  })
+
+  test('an explicit switch in this session still takes effect', async () => {
+    const {
+      saveProviderProfile,
+      materializeActiveProvider,
+      activateProviderProfile,
+      getActiveProviderProfileId,
+      getProfileModelType,
+    } = await import('../providerProfiles.js')
+
+    const a = saveProviderProfile({
+      name: 'ProviderA',
+      modelType: 'openai',
+      baseURL: 'https://a.example.com',
+    })
+    const b = saveProviderProfile({
+      name: 'ProviderB',
+      modelType: 'gemini',
+      baseURL: 'https://b.example.com',
+    })
+
+    stored.activeProviderProfile = a
+    materializeActiveProvider()
+    expect(getProfileModelType()).toBe('openai')
+
+    activateProviderProfile(b)
+    expect(getActiveProviderProfileId()).toBe(b)
+    expect(getProfileModelType()).toBe('gemini')
+    expect(process.env.GEMINI_BASE_URL).toBe('https://b.example.com')
   })
 })

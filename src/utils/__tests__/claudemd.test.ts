@@ -82,6 +82,10 @@ describe('isMemoryFilePath', () => {
     expect(isMemoryFilePath('/project/CLAUDE.md')).toBe(true)
   })
 
+  test('returns true for AGENTS.md path', () => {
+    expect(isMemoryFilePath('/project/AGENTS.md')).toBe(true)
+  })
+
   test('returns true for CLAUDE.local.md path', () => {
     expect(isMemoryFilePath('/project/CLAUDE.local.md')).toBe(true)
   })

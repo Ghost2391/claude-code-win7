@@ -17,7 +17,10 @@ import {
   getInitialSettings,
   getSettings_DEPRECATED,
 } from '../settings/settings.js'
-import type { CustomModelDefinition } from './providerProfiles.js'
+import {
+  type CustomModelDefinition,
+  getActiveProviderProfileId,
+} from './providerProfiles.js'
 import { checkOpus1mAccess, checkSonnet1mAccess } from './check1mAccess.js'
 import { getAPIProvider } from './providers.js'
 import { isModelAllowed } from './modelAllowlist.js'
@@ -585,7 +588,9 @@ export function getModelOptions(fastMode = false): ModelOption[] {
   // from other saved provider profiles so the user can freely switch between
   // providers directly from /model without running /login first (like OpenCode).
   const settings = getInitialSettings()
-  const activeId = settings.activeProviderProfile
+  // Session-pinned id, not the shared settings value: another running session
+  // may have just switched profiles in the same file.
+  const activeId = getActiveProviderProfileId()
   const allProfiles = settings.providerProfiles ?? []
   const activeProfile = allProfiles.find(p => p.id === activeId)
 

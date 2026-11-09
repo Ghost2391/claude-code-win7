@@ -37,15 +37,56 @@ export type ProviderProfile = {
   customModels?: CustomModelDefinition[]
 }
 
+/**
+ * Session-scoped pin of the active profile id.
+ *
+ * `activeProviderProfile` lives in the user settings file, which every running
+ * CLI process shares. Persisting a switch there is correct for the *next*
+ * session, but a concurrent session must not follow it: its model override is
+ * in-memory and session-local (AppState.mainLoopModel), so adopting another
+ * session's profile would send provider A's model to provider B's endpoint
+ * (the "model does not exist" failure). So each process pins the id it started
+ * with and only changes it when the user switches profile in *this* process.
+ *
+ * - `undefined` → not pinned yet; follow the settings file (startup).
+ * - `null`      → explicitly deactivated in this session.
+ * - string      → active profile id for this session.
+ */
+let sessionActiveProfileId: string | null | undefined
+
+/** Raw id persisted in the shared settings file. */
+function getSettingsActiveProviderProfileId(): string | undefined {
+  return getInitialSettings().activeProviderProfile
+}
+
+/** Clear the session pin so the next materialize re-reads the settings file. */
+export function resetSessionProviderProfileForTesting(): void {
+  sessionActiveProfileId = undefined
+}
+
+/**
+ * Pin the settings value for this process on first use. Called from
+ * `materializeActiveProvider()`, which runs once during startup before any
+ * settings watcher can observe another session's write.
+ */
+function pinSessionProfile(): void {
+  if (sessionActiveProfileId === undefined) {
+    sessionActiveProfileId = getSettingsActiveProviderProfileId() ?? null
+  }
+}
+
 /** All profiles actually stored in user settings (excluding the active id). */
 export function getProviderProfiles(): ProviderProfile[] {
   const settings = getInitialSettings()
   return settings.providerProfiles ?? []
 }
 
-/** Id of the currently-activated profile, if any. */
+/** Id of the currently-activated profile for this session, if any. */
 export function getActiveProviderProfileId(): string | undefined {
-  return getInitialSettings().activeProviderProfile
+  if (sessionActiveProfileId !== undefined) {
+    return sessionActiveProfileId ?? undefined
+  }
+  return getSettingsActiveProviderProfileId()
 }
 
 /** The active profile object, if one is set and still present. */
@@ -63,7 +104,12 @@ export function getProfileModelType(
     providerProfiles?: ProviderProfile[]
   } = getInitialSettings(),
 ): ProfileModelType {
-  const activeId = settings.activeProviderProfile
+  // Once this session has pinned a profile, it wins over the shared file so a
+  // concurrent session's switch cannot reroute our requests.
+  const activeId =
+    sessionActiveProfileId !== undefined
+      ? (sessionActiveProfileId ?? undefined)
+      : settings.activeProviderProfile
   const profile = settings.providerProfiles?.find(p => p.id === activeId)
   if (profile) return profile.modelType
   return settings.modelType ?? 'anthropic'
@@ -83,6 +129,7 @@ export function getProfileDefaultModel(
 
 /** Materialize the active profile's fields into process.env + clear caches. */
 export function materializeActiveProvider(): void {
+  pinSessionProfile()
   const profile = getActiveProviderProfile()
   if (!profile) return
 
@@ -280,6 +327,7 @@ export function saveProviderProfile(
 export function deleteProviderProfile(id: string): void {
   const profiles = getProviderProfiles().filter(p => p.id !== id)
   const wasActive = getActiveProviderProfileId() === id
+  if (wasActive) sessionActiveProfileId = null
   updateSettingsForSource('userSettings', {
     providerProfiles: profiles,
     ...(wasActive ? { activeProviderProfile: undefined } : {}),
@@ -288,6 +336,9 @@ export function deleteProviderProfile(id: string): void {
 
 /** Set the active profile and materialize its values into the env. */
 export function activateProviderProfile(id: string): void {
+  // Pin before persisting: the settings watcher in this same process also
+  // fires for our own write, and it must already see the new id.
+  sessionActiveProfileId = id
   updateSettingsForSource('userSettings', {
     activeProviderProfile: id,
   } as unknown as Parameters<typeof updateSettingsForSource>[1])
@@ -296,6 +347,7 @@ export function activateProviderProfile(id: string): void {
 
 /** Deactivate the active profile (fall back to raw modelType/env). */
 export function deactivateProviderProfile(): void {
+  sessionActiveProfileId = null
   updateSettingsForSource('userSettings', {
     activeProviderProfile: undefined,
   } as unknown as Parameters<typeof updateSettingsForSource>[1])

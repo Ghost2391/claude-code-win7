@@ -1,0 +1,147 @@
+{
+  "env": {
+    "OPENAI_BASE_URL": "http://127.0.1:8045/v1",
+    "OPENAI_API_KEY": "sk-your-openai-api-key",
+    "OPENAI_DEFAULT_HAIKU_MODEL": "gemini-3.8-flash-medium",
+    "OPENAI_DEFAULT_SONNET_MODEL": "gemini-3.8-flash-medium",
+    "OPENAI_DEFAULT_OPUS_MODEL": "claude-opus-4-6"
+  },
+  "permissions": {
+    "allow": ["mcp__codegraph__*"],
+    "defaultMode": "bypassPermissions"
+  },
+  "modelType": "openai",
+  "providerProfiles": [
+    {
+      "id": "antigravity-manager",
+      "name": "Antigravity Manager",
+      "modelType": "openai",
+      "baseURL": "http://127.0.1:8045/v1",
+      "apiKey": "sk-your-api-key",
+      "haikuModel": "gemini-3.8-flash-medium",
+      "sonnetModel": "gemini-3.8-flash-medium",
+      "opusModel": "claude-opus-4-6",
+      "contextWindow": "600k",
+      "customModels": [
+        {
+          "value": "claude-opus-4-6",
+          "label": "Claude Opus 4.6",
+          "description": "200K context",
+          "contextWindow": "200k"
+        },
+        {
+          "value": "claude-sonnet-4-6",
+          "label": "Claude Sonnet 4.6",
+          "description": "200K context",
+          "contextWindow": "200k"
+        }
+      ]
+    },
+    {
+      "id": "deepseek",
+      "name": "DeepSeek (local)",
+      "modelType": "openai",
+      "baseURL": "http://127.0.0.1:7863/v1",
+      "apiKey": "sk-your-api-key",
+      "contextWindow": "600k",
+      "customModels": [
+        {
+          "value": "cn:glm-5.3",
+          "label": "glm-5.3(CN)",
+          "description": "600K context",
+          "contextWindow": "600k"
+        },
+        {
+          "value": "cn:deepseek-v4.1-flash",
+          "label": "cn:deepseek-v4.1-flash",
+          "description": "600K context",
+          "contextWindow": "600k"
+        },
+        {
+          "value": "global:hy4free",
+          "label": "global:hy4free",
+          "description": "600K context",
+          "contextWindow": "600k"
+        },
+        {
+          "value": "cn:hy4free",
+          "label": "cn:hy4free",
+          "description": "600K context",
+          "contextWindow": "600k"
+        },
+        {
+          "value": "global:deepseek-v4.1-flash",
+          "label": "global:deepseek-v4.1-flash",
+          "description": "600K context",
+          "contextWindow": "600k"
+        },
+        {
+          "value": "global:glm-5.3",
+          "label": "global:glm-5.3",
+          "description": "600K context",
+          "contextWindow": "600k"
+        }
+      ]
+    },
+    {
+      "id": "deepseek-offical",
+      "name": "deepseek-offical",
+      "modelType": "openai",
+      "baseURL": "https://api.deepseek.com/v1",
+      "apiKey": "sk-your-deepseek-api-key",
+      "haikuModel": "deepseek-flash",
+      "sonnetModel": "deepseek-flash",
+      "opusModel": "deepseek-flash",
+      "contextWindow": "600k"
+    }
+  ],
+  "activeProviderProfile": "antigravity-manager",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /path/to/notify_pet.py --event coding",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /path/to/notify_pet.py --event complete",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /path/to/notify_pet.py --event attention",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /path/to/notify_pet.py --event user_choice",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "statusLineEnabled": true,
+  "skipDangerousModePermissionPrompt": true
+}
