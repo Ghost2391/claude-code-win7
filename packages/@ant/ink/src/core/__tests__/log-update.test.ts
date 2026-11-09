@@ -212,3 +212,88 @@ describe('legacyWindowsViewportRepaint', () => {
     expect(content.endsWith(cup(4, 1))).toBe(true)
   })
 })
+
+describe('main-screen height change self-heal', () => {
+  /**
+   * Two frames sharing pools so the cell diff compares equal packed words.
+   * The previous frame fills the viewport (height >= viewport height), which
+   * is the state where relative cursor moves depend on exact scroll math.
+   */
+  function makeHeightChangeFrames(
+    prevH: number,
+    nextH: number,
+  ): {
+    prev: Frame
+    next: Frame
+    stylePool: StylePool
+  } {
+    const stylePool = new StylePool()
+    const charPool = new CharPool()
+    const hyperlinkPool = new HyperlinkPool()
+    const make = (height: number, char: string): Frame => {
+      const screen = createScreen(
+        10,
+        height,
+        stylePool,
+        charPool,
+        hyperlinkPool,
+      )
+      // Mark the bottom row so the repaint has content to place.
+      setCellAt(screen, 0, height - 1, {
+        char,
+        styleId: stylePool.none,
+        width: CellWidth.Narrow,
+        hyperlink: undefined,
+      })
+      return {
+        screen,
+        viewport: { width: 10, height: 5 },
+        cursor: { x: 0, y: height, visible: true },
+      }
+    }
+    return { prev: make(prevH, 'A'), next: make(nextH, 'B'), stylePool }
+  }
+
+  function stdoutOf(diff: Diff): string {
+    return diff
+      .filter(
+        (patch): patch is { type: 'stdout'; content: string } =>
+          patch.type === 'stdout',
+      )
+      .map(patch => patch.content)
+      .join('')
+  }
+
+  test('growing past the viewport repaints the viewport by absolute row', () => {
+    const { prev, next, stylePool } = makeHeightChangeFrames(8, 9)
+    const text = stdoutOf(
+      new LogUpdate({ isTTY: true, stylePool }).render(prev, next, false),
+    )
+
+    expect(text).toContain(cup(1, 1)) // first visible row
+    expect(text).toContain(cup(5, 1)) // last visible row (viewport height)
+    expect(text).toContain('B') // new bottom row content painted
+    expect(text.includes(ERASE_SCREEN)).toBe(false)
+  })
+
+  test('shrinking while still above the viewport repaints by absolute row', () => {
+    const { prev, next, stylePool } = makeHeightChangeFrames(8, 7)
+    const text = stdoutOf(
+      new LogUpdate({ isTTY: true, stylePool }).render(prev, next, false),
+    )
+
+    expect(text).toContain(cup(1, 1))
+    expect(text).toContain(cup(5, 1))
+    expect(text.includes(ERASE_SCREEN)).toBe(false)
+  })
+
+  test('a frame that fits the viewport keeps the cheap incremental path', () => {
+    const { prev, next, stylePool } = makeHeightChangeFrames(3, 4)
+    const text = stdoutOf(
+      new LogUpdate({ isTTY: true, stylePool }).render(prev, next, false),
+    )
+
+    expect(text).not.toContain(cup(1, 1))
+    expect(text).toContain('B')
+  })
+})

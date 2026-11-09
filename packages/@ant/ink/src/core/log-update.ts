@@ -266,6 +266,25 @@ export class LogUpdate {
         ],
         { dx: -prev.x, dy: -linesToClear },
       ])
+
+      // Once the previous frame filled the viewport, every subsequent write
+      // is a relative move over rows whose physical position depends on how
+      // many lines the terminal actually scrolled. A one-row slip there
+      // interleaves the old frame's rows with the new one (stale todo/spinner
+      // rows showing through between freshly painted ones). Height changes are
+      // rare, so repaint the visible viewport by absolute row afterwards —
+      // idempotent, and it heals any drift the incremental path introduced.
+      if (
+        !altScreen &&
+        prev.viewport.height > 0 &&
+        prev.screen.height >= prev.viewport.height
+      ) {
+        return [
+          ...scrollPatch,
+          ...screen.diff,
+          ...viewportRepaint(next, this.options.stylePool),
+        ]
+      }
     }
 
     // viewportY = number of rows in scrollback (not visible on terminal).
@@ -392,7 +411,13 @@ export class LogUpdate {
       undefined,
     )
 
-    // Handle growth: render new rows directly (they naturally scroll the terminal)
+    // Handle growth: render new rows directly (they naturally scroll the
+    // terminal). Same self-heal as the shrink path above: when the previous
+    // frame already filled the viewport, the rows written here scroll the
+    // terminal, and the following relative-move diff can land one row off —
+    // leaving the old frame's last rows visible between new ones while output
+    // streams and the todo/spinner block changes height. Repaint the visible
+    // viewport by absolute row once the new rows exist.
     if (growing) {
       renderFrameSlice(
         screen,
@@ -401,6 +426,17 @@ export class LogUpdate {
         next.screen.height,
         stylePool,
       )
+      if (
+        !altScreen &&
+        prev.viewport.height > 0 &&
+        prev.screen.height >= prev.viewport.height
+      ) {
+        return [
+          ...scrollPatch,
+          ...screen.diff,
+          ...viewportRepaint(next, this.options.stylePool),
+        ]
+      }
     }
 
     // Restore cursor. Skipped in alt-screen: the cursor is hidden, its
