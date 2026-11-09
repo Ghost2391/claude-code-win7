@@ -15,8 +15,8 @@
  * - Files closer to the current directory have higher priority (loaded later)
  * - CLAUDE.md, AGENTS.md, .claude/CLAUDE.md, and all .md files in .claude/rules/ are checked in each directory for Project memory
  * - AGENTS.md is a cross-tool convention shared with other coding agents; when both
- *   CLAUDE.md and AGENTS.md exist in the same directory, CLAUDE.md loads first and
- *   AGENTS.md later (so AGENTS.md wins as the higher-priority overlay)
+ *   CLAUDE.md and AGENTS.md exist in the same directory, AGENTS.md loads first and
+ *   CLAUDE.md later (so CLAUDE.md wins as the higher-priority overlay)
  *
  * Memory @include directive:
  * - Memory files can include other files using @ notation
@@ -887,24 +887,23 @@ export const getMemoryFiles = memoize(
 
       // Try reading CLAUDE.md (Project) - only if projectSettings is enabled
       if (isSettingSourceEnabled('projectSettings') && !skipProject) {
-        const projectPath = join(dir, 'CLAUDE.md')
+        // AGENTS.md first: it is the cross-tool convention shared with other
+        // coding agents, so in a directory that defines both it acts as the
+        // base and CLAUDE.md (loaded later = higher priority) wins on conflict.
+        const agentsMdPath = join(dir, 'AGENTS.md')
         result.push(
           ...(await processMemoryFile(
-            projectPath,
+            agentsMdPath,
             'Project',
             processedPaths,
             includeExternal,
           )),
         )
 
-        // Try reading AGENTS.md (Project) — cross-tool instruction file
-        // shared with other coding agents. Loaded after CLAUDE.md so a
-        // project that defines both gets CLAUDE.md as the base and
-        // AGENTS.md as the higher-priority overlay.
-        const agentsMdPath = join(dir, 'AGENTS.md')
+        const projectPath = join(dir, 'CLAUDE.md')
         result.push(
           ...(await processMemoryFile(
-            agentsMdPath,
+            projectPath,
             'Project',
             processedPaths,
             includeExternal,
@@ -956,22 +955,23 @@ export const getMemoryFiles = memoize(
     if (isEnvTruthy(process.env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD)) {
       const additionalDirs = getAdditionalDirectoriesForClaudeMd()
       for (const dir of additionalDirs) {
-        // Try reading CLAUDE.md from the additional directory
-        const projectPath = join(dir, 'CLAUDE.md')
+        // Try reading AGENTS.md from the additional directory (base layer;
+        // CLAUDE.md loads after it and wins on conflict)
+        const agentsMdPath = join(dir, 'AGENTS.md')
         result.push(
           ...(await processMemoryFile(
-            projectPath,
+            agentsMdPath,
             'Project',
             processedPaths,
             includeExternal,
           )),
         )
 
-        // Try reading AGENTS.md from the additional directory
-        const agentsMdPath = join(dir, 'AGENTS.md')
+        // Try reading CLAUDE.md from the additional directory
+        const projectPath = join(dir, 'CLAUDE.md')
         result.push(
           ...(await processMemoryFile(
-            agentsMdPath,
+            projectPath,
             'Project',
             processedPaths,
             includeExternal,
@@ -1280,21 +1280,22 @@ export async function getMemoryFilesForNestedDirectory(
 ): Promise<MemoryFileInfo[]> {
   const result: MemoryFileInfo[] = []
 
-  // Process project memory files (CLAUDE.md, AGENTS.md, .claude/CLAUDE.md)
+  // Process project memory files (AGENTS.md, CLAUDE.md, .claude/CLAUDE.md).
+  // AGENTS.md first so the later-loaded CLAUDE.md wins on conflict.
   if (isSettingSourceEnabled('projectSettings')) {
-    const projectPath = join(dir, 'CLAUDE.md')
+    const agentsMdPath = join(dir, 'AGENTS.md')
     result.push(
       ...(await processMemoryFile(
-        projectPath,
+        agentsMdPath,
         'Project',
         processedPaths,
         false,
       )),
     )
-    const agentsMdPath = join(dir, 'AGENTS.md')
+    const projectPath = join(dir, 'CLAUDE.md')
     result.push(
       ...(await processMemoryFile(
-        agentsMdPath,
+        projectPath,
         'Project',
         processedPaths,
         false,

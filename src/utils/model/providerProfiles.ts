@@ -131,10 +131,13 @@ export function getProfileDefaultModel(
 export function materializeActiveProvider(): void {
   pinSessionProfile()
   const profile = getActiveProviderProfile()
-  if (!profile) return
 
   // Reset any profile-injected env vars so switching between profiles
   // (e.g. from one with a custom baseURL to one with default) doesn't leak.
+  // This also runs when the active profile no longer exists (deleted here or
+  // by another session): leaving its base URL / API key in place while
+  // getProfileModelType() falls back to settings.modelType would send the
+  // fallback provider's models to the deleted provider's endpoint.
   const profileEnvKeys = [
     'ANTHROPIC_BASE_URL',
     'ANTHROPIC_AUTH_TOKEN',
@@ -161,6 +164,13 @@ export function materializeActiveProvider(): void {
     delete process.env[k]
   }
 
+  // Clear the client caches even with no profile: the env above may have just
+  // changed, and both clients cache the endpoint captured at construction.
+  clearOpenAIClientCache()
+  clearGrokClientCache()
+
+  if (!profile) return
+
   const envMap: Record<string, string> = {}
 
   if (profile.baseURL) {
@@ -182,11 +192,6 @@ export function materializeActiveProvider(): void {
   for (const [key, value] of Object.entries(envMap)) {
     process.env[key] = value
   }
-
-  // Clients cache the built endpoint against the env at construction time —
-  // invalidate so the next build picks up the materialized vars.
-  clearOpenAIClientCache()
-  clearGrokClientCache()
 }
 
 /** Check whether a profile defines or provides the given model. */
@@ -332,6 +337,8 @@ export function deleteProviderProfile(id: string): void {
     providerProfiles: profiles,
     ...(wasActive ? { activeProviderProfile: undefined } : {}),
   } as unknown as Parameters<typeof updateSettingsForSource>[1])
+  // Drop the deleted profile's base URL / API key from this process's env.
+  if (wasActive) materializeActiveProvider()
 }
 
 /** Set the active profile and materialize its values into the env. */

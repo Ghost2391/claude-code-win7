@@ -322,6 +322,36 @@ describe('providerProfiles', () => {
     expect(getProfileModelType()).toBe('openai')
   })
 
+  test('deleting the active profile clears its env instead of leaking it', async () => {
+    const {
+      saveProviderProfile,
+      materializeActiveProvider,
+      deleteProviderProfile,
+      getProfileModelType,
+    } = await import('../providerProfiles.js')
+
+    const id = saveProviderProfile({
+      name: 'Doomed',
+      modelType: 'openai',
+      baseURL: 'https://doomed.example.com',
+      apiKey: 'sk-doomed',
+      sonnetModel: 'doomed-model',
+    })
+    stored.activeProviderProfile = id
+    stored.modelType = 'openai'
+    materializeActiveProvider()
+    expect(process.env.OPENAI_BASE_URL).toBe('https://doomed.example.com')
+
+    deleteProviderProfile(id)
+
+    // No profile is active any more, so its endpoint/key/model must be gone —
+    // otherwise the fallback modelType would send requests to a dead endpoint.
+    expect(process.env.OPENAI_BASE_URL).toBeUndefined()
+    expect(process.env.OPENAI_API_KEY).toBeUndefined()
+    expect(process.env.OPENAI_DEFAULT_SONNET_MODEL).toBeUndefined()
+    expect(getProfileModelType()).toBe('openai')
+  })
+
   test('an explicit switch in this session still takes effect', async () => {
     const {
       saveProviderProfile,
