@@ -222,6 +222,7 @@ describe('main-screen height change self-heal', () => {
   function makeHeightChangeFrames(
     prevH: number,
     nextH: number,
+    cursorY?: number,
   ): {
     prev: Frame
     next: Frame
@@ -248,7 +249,7 @@ describe('main-screen height change self-heal', () => {
       return {
         screen,
         viewport: { width: 10, height: 5 },
-        cursor: { x: 0, y: height, visible: true },
+        cursor: { x: 0, y: cursorY ?? height, visible: true },
       }
     }
     return { prev: make(prevH, 'A'), next: make(nextH, 'B'), stylePool }
@@ -264,8 +265,9 @@ describe('main-screen height change self-heal', () => {
       .join('')
   }
 
-  test('growing past the viewport repaints the viewport by absolute row', () => {
-    const { prev, next, stylePool } = makeHeightChangeFrames(8, 9)
+  test('the frame that first exceeds the viewport repaints by absolute row', () => {
+    // prev exactly fits (5 rows, viewport 5) → next overflows (6 > 5).
+    const { prev, next, stylePool } = makeHeightChangeFrames(5, 6)
     const text = stdoutOf(
       new LogUpdate({ isTTY: true, stylePool }).render(prev, next, false),
     )
@@ -276,14 +278,26 @@ describe('main-screen height change self-heal', () => {
     expect(text.includes(ERASE_SCREEN)).toBe(false)
   })
 
-  test('shrinking while still above the viewport repaints by absolute row', () => {
-    const { prev, next, stylePool } = makeHeightChangeFrames(8, 7)
+  test('steady growth above the viewport stays on the cheap append path', () => {
+    // Both frames overflow the viewport: pure append, no viewport repaint.
+    const { prev, next, stylePool } = makeHeightChangeFrames(8, 9)
+    const text = stdoutOf(
+      new LogUpdate({ isTTY: true, stylePool }).render(prev, next, false),
+    )
+
+    expect(text).not.toContain(cup(1, 1))
+    expect(text).toContain('B')
+  })
+
+  test('crossing back into the viewport repaints by absolute row', () => {
+    // cursor above the last row so the shrink->below full reset (which needs
+    // cursorAtBottom) does not fire; this exercises the crossing repaint.
+    const { prev, next, stylePool } = makeHeightChangeFrames(6, 4, 2)
     const text = stdoutOf(
       new LogUpdate({ isTTY: true, stylePool }).render(prev, next, false),
     )
 
     expect(text).toContain(cup(1, 1))
-    expect(text).toContain(cup(5, 1))
     expect(text.includes(ERASE_SCREEN)).toBe(false)
   })
 

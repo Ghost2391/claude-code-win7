@@ -267,17 +267,16 @@ export class LogUpdate {
         { dx: -prev.x, dy: -linesToClear },
       ])
 
-      // Once the previous frame filled the viewport, every subsequent write
-      // is a relative move over rows whose physical position depends on how
-      // many lines the terminal actually scrolled. A one-row slip there
-      // interleaves the old frame's rows with the new one (stale todo/spinner
-      // rows showing through between freshly painted ones). Height changes are
-      // rare, so repaint the visible viewport by absolute row afterwards —
-      // idempotent, and it heals any drift the incremental path introduced.
+      // Crossing back INTO the viewport: rows that were physically scrolled
+      // away become visible again, and the relative-move bookkeeping is at its
+      // most fragile (this is the frame where the scrollback depth changes).
+      // Repaint the visible viewport by absolute row — idempotent, and it
+      // heals any one-row drift the incremental path introduced.
       if (
         !altScreen &&
         prev.viewport.height > 0 &&
-        prev.screen.height >= prev.viewport.height
+        prev.screen.height > prev.viewport.height &&
+        next.screen.height <= next.viewport.height
       ) {
         return [
           ...scrollPatch,
@@ -412,12 +411,12 @@ export class LogUpdate {
     )
 
     // Handle growth: render new rows directly (they naturally scroll the
-    // terminal). Same self-heal as the shrink path above: when the previous
-    // frame already filled the viewport, the rows written here scroll the
-    // terminal, and the following relative-move diff can land one row off —
-    // leaving the old frame's last rows visible between new ones while output
-    // streams and the todo/spinner block changes height. Repaint the visible
-    // viewport by absolute row once the new rows exist.
+    // terminal). Once the frame is already taller than the viewport this is a
+    // pure append and stays on the cheap path. The exception is the crossing
+    // frame — the one that pushes the first rows out of the viewport — because
+    // that is where the scrollback depth changes and the relative-move
+    // bookkeeping can land one row off (old rows showing through between new
+    // ones). Repaint the visible viewport by absolute row for that frame only.
     if (growing) {
       renderFrameSlice(
         screen,
@@ -429,7 +428,8 @@ export class LogUpdate {
       if (
         !altScreen &&
         prev.viewport.height > 0 &&
-        prev.screen.height >= prev.viewport.height
+        prev.screen.height <= prev.viewport.height &&
+        next.screen.height > next.viewport.height
       ) {
         return [
           ...scrollPatch,
