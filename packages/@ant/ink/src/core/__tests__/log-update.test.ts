@@ -289,6 +289,29 @@ describe('main-screen height change self-heal', () => {
     expect(text).toContain('B')
   })
 
+  test('overflowing steady state repaints by absolute row every N frames', () => {
+    // Same height above the viewport every frame: pure relative moves, so a
+    // periodic absolute repaint is the only thing that can heal drift.
+    const { prev, next, stylePool } = makeHeightChangeFrames(8, 8)
+    const logUpdate = new LogUpdate({ isTTY: true, stylePool })
+    const outputs: string[] = []
+    for (let i = 0; i < 64; i++) {
+      outputs.push(stdoutOf(logUpdate.render(prev, next, false)))
+    }
+    expect(outputs.slice(0, 63).some(t => t.includes(cup(1, 1)))).toBe(false)
+    expect(outputs[63]).toContain(cup(1, 1))
+  })
+
+  test('a frame inside the viewport resets the repaint countdown', () => {
+    const { prev, next, stylePool } = makeHeightChangeFrames(8, 8)
+    const small = makeHeightChangeFrames(3, 3)
+    const logUpdate = new LogUpdate({ isTTY: true, stylePool })
+    for (let i = 0; i < 63; i++) logUpdate.render(prev, next, false)
+    logUpdate.render(small.prev, small.next, false)
+    const text = stdoutOf(logUpdate.render(prev, next, false))
+    expect(text).not.toContain(cup(1, 1))
+  })
+
   test('crossing back into the viewport repaints by absolute row', () => {
     // cursor above the last row so the shrink->below full reset (which needs
     // cursorAtBottom) does not fire; this exercises the crossing repaint.

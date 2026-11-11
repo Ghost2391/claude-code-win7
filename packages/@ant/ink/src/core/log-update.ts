@@ -43,8 +43,18 @@ type Options = {
 const CARRIAGE_RETURN = { type: 'carriageReturn' } as const
 const NEWLINE = { type: 'stdout', content: '\n' } as const
 
+/**
+ * In the overflowing steady state only relative cursor moves are emitted, so a
+ * one-row drift (conhost scroll quirks, a resize not observed yet, a lost
+ * frame) never self-corrects until the next boundary crossing. Repaint the
+ * visible viewport by absolute row every N frames to heal it; scrollback is
+ * never touched.
+ */
+const STEADY_STATE_REPAINT_INTERVAL = 64
+
 export class LogUpdate {
   private state: State
+  private framesSinceViewportRepaint = 0
 
   constructor(private readonly options: Options) {
     this.state = {
@@ -63,6 +73,7 @@ export class LogUpdate {
   // Called when process resumes from suspension (SIGCONT) to prevent clobbering terminal content
   reset(): void {
     this.state.previousOutput = ''
+    this.framesSinceViewportRepaint = 0
   }
 
   private renderFullFrame(frame: Frame): Diff {
@@ -437,6 +448,29 @@ export class LogUpdate {
           ...viewportRepaint(next, this.options.stylePool),
         ]
       }
+    }
+
+    // Safety net for the overflowing steady state (frame taller than the
+    // viewport, same height as last frame). Everything written so far used
+    // relative cursor moves, which can leave the terminal one row off until a
+    // boundary crossing or full reset happens to heal it. Emit an absolute
+    // viewport repaint periodically so any accumulated drift is corrected.
+    if (
+      !altScreen &&
+      next.viewport.height > 0 &&
+      next.screen.height > next.viewport.height
+    ) {
+      this.framesSinceViewportRepaint += 1
+      if (this.framesSinceViewportRepaint >= STEADY_STATE_REPAINT_INTERVAL) {
+        this.framesSinceViewportRepaint = 0
+        return [
+          ...scrollPatch,
+          ...screen.diff,
+          ...viewportRepaint(next, this.options.stylePool),
+        ]
+      }
+    } else {
+      this.framesSinceViewportRepaint = 0
     }
 
     // Restore cursor. Skipped in alt-screen: the cursor is hidden, its
