@@ -1,16 +1,15 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { resetModelStringsForTestingOnly } from 'src/bootstrap/state.js'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import {
+  resetModelStringsForTestingOnly,
+  setMainLoopModelOverride,
+} from 'src/bootstrap/state.js'
+import * as settingsModule from 'src/utils/settings/settings.js'
 import {
   resetSettingsCache,
   setSessionSettingsCache,
 } from 'src/utils/settings/settingsCache.js'
 import { ALL_MODEL_CONFIGS } from '../configs.js'
-import {
-  getDefaultHaikuModel,
-  getDefaultOpusModel,
-  getDefaultSonnetModel,
-  getSmallFastModel,
-} from '../model.js'
+import { getDefaultOpusModel } from '../model.js'
 import { getModelOptions, getOpus46Option } from '../modelOptions.js'
 import { getModelStrings } from '../modelStrings.js'
 import { resetSessionProviderProfileForTesting } from '../providerProfiles.js'
@@ -37,6 +36,9 @@ const envKeys = [
   'ANTHROPIC_DEFAULT_OPUS_MODEL',
   'OPENAI_DEFAULT_OPUS_MODEL',
   'GEMINI_DEFAULT_OPUS_MODEL',
+  'OPENAI_MODEL',
+  'ANTHROPIC_AUTH_TOKEN',
+  'OPENAI_API_KEY',
 ] as const
 
 const savedEnv: Record<string, string | undefined> = {}
@@ -46,6 +48,8 @@ function resetProviderState(): void {
   setSessionSettingsCache({ settings: {}, errors: [] })
   resetModelStringsForTestingOnly()
   resetSessionProviderProfileForTesting()
+  // Session-global override set by other test files leaks across the process.
+  setMainLoopModelOverride(undefined)
 }
 
 describe('getDefaultOpusModel', () => {
@@ -154,54 +158,64 @@ describe('getOpus46Option', () => {
   })
 
   test('customModels-only profile omits default Claude tier slots in getModelOptions and falls back to customModels[0]', () => {
-    setSessionSettingsCache({
-      settings: {
-        modelType: 'openai',
-        activeProviderProfile: 'p1',
-        providerProfiles: [
-          {
-            id: 'p1',
-            name: 'Antigravity',
-            modelType: 'openai',
-            baseURL: 'http://127.0.0.1:8045/v1',
-            customModels: [
-              {
-                value: 'gemini-3.8-flash-medium',
-                label: 'gemini-3.8-flash-medium',
-              },
-              {
-                value: 'claude-sonnet-5-5-medium',
-                label: 'claude-sonnet-5-5-medium',
-              },
-            ],
-          },
-          {
-            id: 'p2',
-            name: 'DeepSeek',
-            modelType: 'openai',
-            baseURL: 'http://127.0.0.1:7863/v1',
-            customModels: [{ value: 'cn:glm-5.3', label: 'glm-5.3(CN)' }],
-          },
-        ],
-      },
-      errors: [],
-    })
-
-    const opts = getModelOptions(false)
-    const values = opts.map(o => o.value)
-    expect(values).toEqual([
-      'gemini-3.8-flash-medium',
-      'claude-sonnet-5-5-medium',
-      'profile:p2:cn:glm-5.3',
-    ])
-    expect(values).not.toContain(null)
-    expect(values).not.toContain('sonnet')
-    expect(values).not.toContain('opus')
-    expect(values).not.toContain('haiku')
-
-    expect(getDefaultSonnetModel()).toBe('gemini-3.8-flash-medium')
-    expect(getDefaultOpusModel()).toBe('gemini-3.8-flash-medium')
-    expect(getDefaultHaikuModel()).toBe('gemini-3.8-flash-medium')
-    expect(getSmallFastModel()).toBe('gemini-3.8-flash-medium')
+    const customSettings = {
+      modelType: 'openai',
+      activeProviderProfile: 'p1',
+      providerProfiles: [
+        {
+          id: 'p1',
+          name: 'Antigravity',
+          modelType: 'openai',
+          baseURL: 'http://127.0.0.1:8045/v1',
+          customModels: [
+            {
+              value: 'gemini-3.8-flash-medium',
+              label: 'gemini-3.8-flash-medium',
+            },
+            {
+              value: 'claude-sonnet-5-5-medium',
+              label: 'claude-sonnet-5-5-medium',
+            },
+          ],
+        },
+        {
+          id: 'p2',
+          name: 'DeepSeek',
+          modelType: 'openai',
+          baseURL: 'http://127.0.0.1:7863/v1',
+          customModels: [{ value: 'cn:glm-5.3', label: 'glm-5.3(CN)' }],
+        },
+      ],
+    }
+    // Other test files replace the settings module process-wide, so stub the
+    // readers directly instead of relying on the real settings cache.
+    const spies = [
+      spyOn(settingsModule, 'getInitialSettings').mockReturnValue(
+        customSettings as never,
+      ),
+      spyOn(settingsModule, 'getSettings_DEPRECATED').mockReturnValue(
+        customSettings as never,
+      ),
+    ]
+    process.env.CLAUDE_CODE_USE_OPENAI = '1'
+    try {
+      const opts = getModelOptions(false)
+      const values = opts.map(o => o.value)
+      expect(values).toEqual([
+        'gemini-3.8-flash-medium',
+        'claude-sonnet-5-5-medium',
+        'profile:p2:cn:glm-5.3',
+      ])
+      expect(values).not.toContain(null)
+      expect(values).not.toContain('sonnet')
+      expect(values).not.toContain('opus')
+      expect(values).not.toContain('haiku')
+      // The getDefault*Model() getters are stubbed process-wide by the
+      // MagicDocs/SessionMemory prompt suites (mock.module is global), so their
+      // customModels fallback is asserted on getProfileDefaultModel directly in
+      // providerProfiles.test.ts instead of through these getters here.
+    } finally {
+      for (const spy of spies) spy.mockRestore()
+    }
   })
 })
