@@ -53,6 +53,10 @@ export type ProviderProfile = {
  * - string      → active profile id for this session.
  */
 let sessionActiveProfileId: string | null | undefined
+const profileEnvOverlay = new Map<
+  string,
+  { original: string | undefined; injected: string }
+>()
 
 /** Raw id persisted in the shared settings file. */
 function getSettingsActiveProviderProfileId(): string | undefined {
@@ -62,6 +66,7 @@ function getSettingsActiveProviderProfileId(): string | undefined {
 /** Clear the session pin so the next materialize re-reads the settings file. */
 export function resetSessionProviderProfileForTesting(): void {
   sessionActiveProfileId = undefined
+  profileEnvOverlay.clear()
 }
 
 /**
@@ -132,37 +137,12 @@ export function materializeActiveProvider(): void {
   pinSessionProfile()
   const profile = getActiveProviderProfile()
 
-  // Reset any profile-injected env vars so switching between profiles
-  // (e.g. from one with a custom baseURL to one with default) doesn't leak.
-  // This also runs when the active profile no longer exists (deleted here or
-  // by another session): leaving its base URL / API key in place while
-  // getProfileModelType() falls back to settings.modelType would send the
-  // fallback provider's models to the deleted provider's endpoint.
-  const profileEnvKeys = [
-    'ANTHROPIC_BASE_URL',
-    'ANTHROPIC_AUTH_TOKEN',
-    'ANTHROPIC_DEFAULT_HAIKU_MODEL',
-    'ANTHROPIC_DEFAULT_SONNET_MODEL',
-    'ANTHROPIC_DEFAULT_OPUS_MODEL',
-    'OPENAI_BASE_URL',
-    'OPENAI_API_KEY',
-    'OPENAI_DEFAULT_HAIKU_MODEL',
-    'OPENAI_DEFAULT_SONNET_MODEL',
-    'OPENAI_DEFAULT_OPUS_MODEL',
-    'GEMINI_BASE_URL',
-    'GEMINI_API_KEY',
-    'GEMINI_DEFAULT_HAIKU_MODEL',
-    'GEMINI_DEFAULT_SONNET_MODEL',
-    'GEMINI_DEFAULT_OPUS_MODEL',
-    'GROK_BASE_URL',
-    'GROK_API_KEY',
-    'GROK_DEFAULT_HAIKU_MODEL',
-    'GROK_DEFAULT_SONNET_MODEL',
-    'GROK_DEFAULT_OPUS_MODEL',
-  ]
-  for (const k of profileEnvKeys) {
-    delete process.env[k]
+  for (const [key, { original, injected }] of profileEnvOverlay) {
+    if (process.env[key] !== injected) continue
+    if (original === undefined) delete process.env[key]
+    else process.env[key] = original
   }
+  profileEnvOverlay.clear()
 
   // Clear the client caches even with no profile: the env above may have just
   // changed, and both clients cache the endpoint captured at construction.
@@ -190,6 +170,10 @@ export function materializeActiveProvider(): void {
   }
 
   for (const [key, value] of Object.entries(envMap)) {
+    profileEnvOverlay.set(key, {
+      original: process.env[key],
+      injected: value,
+    })
     process.env[key] = value
   }
 }
@@ -358,6 +342,7 @@ export function deactivateProviderProfile(): void {
   updateSettingsForSource('userSettings', {
     activeProviderProfile: undefined,
   } as unknown as Parameters<typeof updateSettingsForSource>[1])
+  materializeActiveProvider()
 }
 
 /** Map a profile modelType to the env key holding its base URL. */

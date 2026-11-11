@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { isLegacyWindowsConsole } from '../clearTerminal.js'
 import type { Diff, Frame } from '../frame.js'
-import { LogUpdate, legacyWindowsViewportRepaint } from '../log-update.js'
+import {
+  LogUpdate,
+  legacyWindowsViewportRepaint,
+  viewportRepaint,
+} from '../log-update.js'
 import {
   CellWidth,
   CharPool,
@@ -75,6 +79,20 @@ describe('isLegacyWindowsConsole', () => {
 })
 
 describe('legacyWindowsViewportRepaint', () => {
+  test('non-scrolling repaint reserves the cursor row and preserves row mapping', () => {
+    const { frame, stylePool } = makeFrame(10, 8, 10, 5, [
+      [0, 3, 'D'],
+      [0, 4, 'E'],
+      [0, 7, 'H'],
+    ])
+    const content = contentOf(viewportRepaint(frame, stylePool, true))
+    expect(content).toContain(cup(1, 1) + EL + 'E')
+    expect(content).toContain(cup(4, 1) + EL + 'H')
+    expect(content).not.toContain('D')
+    expect(content).not.toContain('\n')
+    expect(content.endsWith(cup(5, 1))).toBe(true)
+  })
+
   function makeFrame(
     screenW: number,
     screenH: number,
@@ -300,6 +318,8 @@ describe('main-screen height change self-heal', () => {
     }
     expect(outputs.slice(0, 63).some(t => t.includes(cup(1, 1)))).toBe(false)
     expect(outputs[63]).toContain(cup(1, 1))
+    expect(outputs[63]!.endsWith(cup(5, 1))).toBe(true)
+    expect(outputs[63].endsWith('\n')).toBe(false)
   })
 
   test('a frame inside the viewport resets the repaint countdown', () => {

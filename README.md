@@ -161,6 +161,7 @@ bun run build
 | Opus Model   | 高性能模型 ID | `claude-opus-4-6`            |
 
 - ⌨️ **Tab / Shift+Tab** 切换字段，**Enter** 确认并跳到下一个，最后一个字段按 Enter 保存
+- ℹ️ 这三个模型字段现在仅作为回退；需要多模型切换时，推荐在 Provider Profile 里配置 `customModels`（见下节），`/model` 菜单将只展示自定义模型
 
 > ℹ️ 支持所有 Anthropic API 兼容服务（如 OpenRouter、AWS Bedrock 代理等），只要接口兼容 Messages API 即可。
 
@@ -179,7 +180,7 @@ bun run build
 
 在 `/login` 中选择 **Provider Profiles · manage saved model sets** 可：
 - 列出/激活已保存的 profile
-- 把当前配置（服务商 + 地址 + 密钥 + 3 个模型）保存为新的命名 profile
+- 把当前配置（服务商 + 地址 + 密钥 + 自定义模型列表）保存为新的命名 profile
 
 **推荐流程**：
 1. `/login` 配好第一套（如 DeepSeek）→ Provider Profiles 里存为命名 profile
@@ -198,9 +199,14 @@ bun run build
       "modelType": "openai",
       "baseURL": "https://api.deepseek.com",
       "apiKey": "sk-xxx",
-      "haikuModel": "deepseek-v4-flash",
-      "sonnetModel": "deepseek-v4-pro",
-      "opusModel": "deepseek-v4-pro"
+      "customModels": [
+        { "value": "deepseek-v4-pro", "label": "DeepSeek V4 Pro" },
+        {
+          "value": "deepseek-v4-flash",
+          "label": "DeepSeek V4 Flash",
+          "contextWindow": 600000
+        }
+      ]
     },
     {
       "id": "glm",
@@ -208,13 +214,15 @@ bun run build
       "modelType": "openai",
       "baseURL": "https://open.bigmodel.cn/api/paas/v4",
       "apiKey": "1234.xxx",
-      "haikuModel": "glm-4.7-flash",
-      "sonnetModel": "glm-4.7",
-      "opusModel": "glm-5.1"
+      "customModels": ["glm-4.7", "glm-5.1"]
     }
   ]
 }
 ```
+
+- `customModels` 里的模型名会**原样**发给服务端，不做 `sonnet`/`opus`/`haiku` 名称映射；只有直接写裸别名时才通过 `OPENAI_DEFAULT_*_MODEL` 等环境变量解析。
+- 任一 profile 配置了 `customModels` 后，`/model` 菜单只展示自定义模型，不再注入默认的 Claude 三档模型。
+- 每个条目可写成字符串或 `{ value, label, description, contextWindow }`；旧字段 `haikuModel` / `sonnetModel` / `opusModel` 仍兼容，仅在 `customModels` 为空时作为回退。
 
 激活的 profile 会自动物化为对应协议族的环境变量（`OPENAI_*` / `GEMINI_*` / `ANTHROPIC_*` / `GROK_*`），运行时模型解析与 API 客户端无需改动。
 

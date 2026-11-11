@@ -112,6 +112,14 @@ export class LogUpdate {
 
     const startTime = performance.now()
     const stylePool = this.options.stylePool
+    if (
+      altScreen ||
+      next.screen.height <= next.viewport.height ||
+      next.viewport.height !== prev.viewport.height ||
+      next.viewport.width !== prev.viewport.width
+    ) {
+      this.framesSinceViewportRepaint = 0
+    }
 
     // Since we assume the cursor is at the bottom on the screen, we only need
     // to clear when the viewport gets shorter (i.e. the cursor position drifts)
@@ -442,26 +450,6 @@ export class LogUpdate {
         prev.screen.height <= prev.viewport.height &&
         next.screen.height > next.viewport.height
       ) {
-        return [
-          ...scrollPatch,
-          ...screen.diff,
-          ...viewportRepaint(next, this.options.stylePool),
-        ]
-      }
-    }
-
-    // Safety net for the overflowing steady state (frame taller than the
-    // viewport, same height as last frame). Everything written so far used
-    // relative cursor moves, which can leave the terminal one row off until a
-    // boundary crossing or full reset happens to heal it. Emit an absolute
-    // viewport repaint periodically so any accumulated drift is corrected.
-    if (
-      !altScreen &&
-      next.viewport.height > 0 &&
-      next.screen.height > next.viewport.height
-    ) {
-      this.framesSinceViewportRepaint += 1
-      if (this.framesSinceViewportRepaint >= STEADY_STATE_REPAINT_INTERVAL) {
         this.framesSinceViewportRepaint = 0
         return [
           ...scrollPatch,
@@ -469,8 +457,6 @@ export class LogUpdate {
           ...viewportRepaint(next, this.options.stylePool),
         ]
       }
-    } else {
-      this.framesSinceViewportRepaint = 0
     }
 
     // Restore cursor. Skipped in alt-screen: the cursor is hidden, its
@@ -510,6 +496,18 @@ export class LogUpdate {
       })
     } else {
       moveCursorTo(screen, next.cursor.x, next.cursor.y)
+    }
+
+    if (
+      !altScreen &&
+      next.viewport.height > 0 &&
+      next.screen.height > next.viewport.height
+    ) {
+      this.framesSinceViewportRepaint += 1
+      if (this.framesSinceViewportRepaint >= STEADY_STATE_REPAINT_INTERVAL) {
+        this.framesSinceViewportRepaint = 0
+        screen.diff.push(...viewportRepaint(next, stylePool, true))
+      }
     }
 
     const elapsed = performance.now() - startTime
@@ -683,7 +681,11 @@ function buildStyledRow(
  */
 // Exported for testing (the gates that reach it are terminal/platform
 // dependent; this lets tests exercise the repaint directly).
-export function viewportRepaint(frame: Frame, stylePool: StylePool): Diff {
+export function viewportRepaint(
+  frame: Frame,
+  stylePool: StylePool,
+  avoidScroll = false,
+): Diff {
   const screen = frame.screen
   const vh = frame.viewport.height
   const sh = screen.height
@@ -692,15 +694,18 @@ export function viewportRepaint(frame: Frame, stylePool: StylePool): Diff {
   }
   // First screen row that is visible (top of the viewport). When the frame is
   // taller than the viewport, the bottom vh rows are visible; otherwise all.
-  const topScreenY = Math.max(0, sh - vh)
+  const topScreenY = Math.max(
+    0,
+    sh - vh + (avoidScroll && frame.cursor.y >= sh ? 1 : 0),
+  )
   let out = ''
   for (let p = 1; p <= vh; p++) {
     const screenY = topScreenY + (p - 1)
     out += cursorPosition(p, 1)
+    out += eraseToEndOfLine()
     if (screenY < sh) {
       out += buildStyledRow(screen, screenY, stylePool)
     }
-    out += eraseToEndOfLine()
   }
   // Park the physical cursor where the normal full-reset leaves it: screen
   // coord (0, sh) — column 0, just past the last content row. renderFrame
@@ -709,7 +714,12 @@ export function viewportRepaint(frame: Frame, stylePool: StylePool): Diff {
   // parking (which already operate correctly from this state on the normal
   // path) behave identically. ink.tsx then moves to the IME/input cursor.
   const physBottomRow = sh - topScreenY + 1
-  if (physBottomRow > vh) {
+  if (avoidScroll) {
+    out += cursorPosition(
+      Math.min(vh, Math.max(1, frame.cursor.y - topScreenY + 1)),
+      frame.cursor.x + 1,
+    )
+  } else if (physBottomRow > vh) {
     // Content fills/overflows the viewport: park at the bottom row and scroll
     // one fresh line (the net effect of renderFrame's trailing LF).
     out += cursorPosition(vh, 1) + NEWLINE.content

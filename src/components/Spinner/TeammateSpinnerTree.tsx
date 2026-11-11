@@ -6,6 +6,7 @@ import { getRunningTeammatesSorted } from '../../tasks/InProcessTeammateTask/InP
 import { formatNumber } from '../../utils/format.js';
 import { TeammateSpinnerLine } from './TeammateSpinnerLine.js';
 import { TEAMMATE_SELECT_HINT } from './teammateSelectHint.js';
+import { selectTeammateRows } from './teammateRows.js';
 
 type Props = {
   selectedIndex?: number;
@@ -32,6 +33,20 @@ export function TeammateSpinnerTree({
   const showTeammateMessagePreview = useAppState(s => s.showTeammateMessagePreview);
 
   const teammateTasks = getRunningTeammatesSorted(tasks);
+  const [idleExpired, setIdleExpired] = React.useState(false);
+  const idleSignature = teammateTasks.map(task => `${task.id}:${task.isIdle}`).join('|');
+  React.useEffect(() => {
+    setIdleExpired(false);
+    if (!allIdle) return;
+    const timer = setTimeout(() => setIdleExpired(true), 30_000);
+    return () => clearTimeout(timer);
+  }, [allIdle, idleSignature]);
+  const { rows, hiddenCount } = selectTeammateRows(
+    teammateTasks,
+    isInSelectionMode === true,
+    viewingAgentTaskId,
+    allIdle === true && idleExpired,
+  );
 
   // Don't render if no running teammates
   if (teammateTasks.length === 0) {
@@ -75,17 +90,24 @@ export function TeammateSpinnerTree({
           {isLeaderSelected && !isLeaderForegrounded && <Text dimColor> · enter to view</Text>}
         </Box>
       }
-      {teammateTasks.map((teammate, index) => (
+      {rows.map(({ teammate, originalIndex }, index) => (
         <TeammateSpinnerLine
           key={teammate.id}
           teammate={teammate}
-          isLast={!isInSelectionMode && index === teammateTasks.length - 1}
-          isSelected={isInSelectionMode && selectedIndex === index}
+          isLast={!isInSelectionMode && hiddenCount === 0 && index === rows.length - 1}
+          isSelected={isInSelectionMode && selectedIndex === originalIndex}
           isForegrounded={viewingAgentTaskId === teammate.id}
           allIdle={allIdle}
           showPreview={showTeammateMessagePreview}
         />
       ))}
+      {hiddenCount > 0 && (
+        <Box paddingLeft={5}>
+          <Text dimColor>
+            {hiddenCount} idle agents hidden · {TEAMMATE_SELECT_HINT} to expand
+          </Text>
+        </Box>
+      )}
       {/* Hide row - only visible during selection mode */}
       {isInSelectionMode && <HideRow isSelected={isHideSelected} />}
     </Box>

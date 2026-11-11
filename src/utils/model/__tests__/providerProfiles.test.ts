@@ -59,6 +59,58 @@ afterEach(() => {
 })
 
 describe('providerProfiles', () => {
+  test('preserves environment configuration without an active profile', async () => {
+    const { materializeActiveProvider } = await import('../providerProfiles.js')
+    process.env.OPENAI_API_KEY = 'external-key'
+    process.env.OPENAI_BASE_URL = 'https://external.example.com'
+    materializeActiveProvider()
+    expect(process.env.OPENAI_API_KEY).toBe('external-key')
+    expect(process.env.OPENAI_BASE_URL).toBe('https://external.example.com')
+  })
+
+  test('restores underlying environment after repeated overlays and deactivation', async () => {
+    const {
+      saveProviderProfile,
+      activateProviderProfile,
+      materializeActiveProvider,
+      deactivateProviderProfile,
+    } = await import('../providerProfiles.js')
+    process.env.OPENAI_API_KEY = 'external-key'
+    const id = saveProviderProfile({
+      name: 'Overlay',
+      modelType: 'openai',
+      apiKey: 'profile-key',
+      baseURL: 'https://profile.example.com',
+    })
+    activateProviderProfile(id)
+    materializeActiveProvider()
+    expect(process.env.OPENAI_API_KEY).toBe('profile-key')
+    deactivateProviderProfile()
+    expect(process.env.OPENAI_API_KEY).toBe('external-key')
+    expect(process.env.OPENAI_BASE_URL).toBeUndefined()
+  })
+
+  test('preserves refreshed settings beneath an active profile', async () => {
+    const {
+      saveProviderProfile,
+      activateProviderProfile,
+      materializeActiveProvider,
+      deleteProviderProfile,
+    } = await import('../providerProfiles.js')
+    process.env.OPENAI_API_KEY = 'old-key'
+    const id = saveProviderProfile({
+      name: 'Overlay',
+      modelType: 'openai',
+      apiKey: 'profile-key',
+    })
+    activateProviderProfile(id)
+    process.env.OPENAI_API_KEY = 'updated-key'
+    materializeActiveProvider()
+    expect(process.env.OPENAI_API_KEY).toBe('profile-key')
+    deleteProviderProfile(id)
+    expect(process.env.OPENAI_API_KEY).toBe('updated-key')
+  })
+
   test('getProfileModelType falls back to settings.modelType ?? anthropic', async () => {
     const { getProfileModelType } = await import('../providerProfiles.js')
     expect(getProfileModelType({})).toBe('anthropic')

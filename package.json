@@ -147,6 +147,7 @@
     "@types/stack-utils": "^2.0.3",
     "@types/turndown": "^5.0.6",
     "@types/ws": "^8.18.1",
+    "@xterm/headless": "6.0.0",
     "ajv": "^8.18.0",
     "asciichart": "^1.5.25",
     "audio-capture-napi": "workspace:*",
