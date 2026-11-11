@@ -1,44 +1,31 @@
-/**
- * Default mapping from Anthropic model names to OpenAI model names.
- * Used only when ANTHROPIC_DEFAULT_*_MODEL env vars are not set.
- */
-const DEFAULT_MODEL_MAP: Record<string, string> = {
-  'claude-sonnet-4-20250514': 'gpt-4o',
-  'claude-sonnet-4-5-20250929': 'gpt-4o',
-  'claude-sonnet-4-6': 'gpt-4o',
-  'claude-opus-4-20250514': 'o3',
-  'claude-opus-4-1-20250805': 'o3',
-  'claude-opus-4-5-20251101': 'o3',
-  'claude-opus-4-6': 'o3',
-  'claude-haiku-4-5-20251001': 'gpt-4o-mini',
-  'claude-3-5-haiku-20241022': 'gpt-4o-mini',
-  'claude-3-7-sonnet-20250219': 'gpt-4o',
-  'claude-3-5-sonnet-20241022': 'gpt-4o',
-}
-
 function getModelFamily(model: string): 'haiku' | 'sonnet' | 'opus' | null {
-  if (/haiku/i.test(model)) return 'haiku'
-  if (/opus/i.test(model)) return 'opus'
-  if (/sonnet/i.test(model)) return 'sonnet'
+  const lower = model.trim().toLowerCase()
+  if (lower === 'haiku') return 'haiku'
+  if (lower === 'opus') return 'opus'
+  if (lower === 'sonnet') return 'sonnet'
   return null
 }
 
 /**
- * Resolve the OpenAI model name for a given Anthropic model.
+ * Resolve the OpenAI model name for a given model string.
+ *
+ * Concrete model names (including custom Claude/Gemini/DeepSeek IDs on an
+ * OpenAI-compatible gateway such as `claude-sonnet-5-5-medium` or
+ * `claude-opus-4-6`) are passed through as-is after stripping client-only
+ * context-window tags (`[1m]`, `[200k]`, etc.). Family env vars only resolve
+ * bare aliases (`sonnet` / `opus` / `haiku`).
  *
  * Priority:
- * 1. OPENAI_MODEL env var (override all)
- * 2. OPENAI_DEFAULT_{FAMILY}_MODEL env var (e.g. OPENAI_DEFAULT_SONNET_MODEL)
- * 3. ANTHROPIC_DEFAULT_{FAMILY}_MODEL env var (backward compatibility)
- * 4. DEFAULT_MODEL_MAP lookup
- * 5. Pass through original model name
+ * 1. OPENAI_MODEL env var (global override)
+ * 2. Bare family alias -> OPENAI_DEFAULT_{FAMILY}_MODEL / ANTHROPIC_DEFAULT_{FAMILY}_MODEL
+ * 3. Pass through original model name
  */
 export function resolveOpenAIModel(anthropicModel: string): string {
   if (process.env.OPENAI_MODEL) {
     return process.env.OPENAI_MODEL
   }
 
-  const cleanModel = anthropicModel.replace(/\[1m\]$/, '')
+  const cleanModel = anthropicModel.replace(/\[(\d+(?:\.\d+)?[kmKM])\]$/, '')
 
   const family = getModelFamily(cleanModel)
   if (family) {
@@ -51,5 +38,5 @@ export function resolveOpenAIModel(anthropicModel: string): string {
     if (anthropicOverride) return anthropicOverride
   }
 
-  return DEFAULT_MODEL_MAP[cleanModel] ?? cleanModel
+  return cleanModel
 }

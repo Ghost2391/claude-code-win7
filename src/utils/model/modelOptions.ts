@@ -560,7 +560,25 @@ function getKnownModelOption(model: string): ModelOption | null {
 }
 
 export function getModelOptions(fastMode = false): ModelOption[] {
-  const options = getModelOptionsBase(fastMode)
+  // Append customModels declared on the active ProviderProfile, plus all models
+  // from other saved provider profiles so the user can freely switch between
+  // providers directly from /model without running /login first (like OpenCode).
+  // When any saved profile defines customModels, omit the built-in Claude tier
+  // slots (Default / Sonnet / Opus / Haiku) so the menu only lists the user's
+  // custom models without alias mapping.
+  const settings = getInitialSettings()
+  // Session-pinned id, not the shared settings value: another running session
+  // may have just switched profiles in the same file.
+  const activeId = getActiveProviderProfileId()
+  const allProfiles = settings.providerProfiles ?? []
+  const activeProfile = allProfiles.find(p => p.id === activeId)
+  const useCustomProfileModelsOnly =
+    allProfiles.length > 0 &&
+    allProfiles.some(p => (p.customModels?.length ?? 0) > 0)
+
+  const options = useCustomProfileModelsOnly
+    ? []
+    : getModelOptionsBase(fastMode)
 
   // Add the custom model from the ANTHROPIC_CUSTOM_MODEL_OPTION env var
   const envCustomModel = process.env.ANTHROPIC_CUSTOM_MODEL_OPTION
@@ -584,19 +602,10 @@ export function getModelOptions(fastMode = false): ModelOption[] {
     }
   }
 
-  // Append customModels declared on the active ProviderProfile, plus all models
-  // from other saved provider profiles so the user can freely switch between
-  // providers directly from /model without running /login first (like OpenCode).
-  const settings = getInitialSettings()
-  // Session-pinned id, not the shared settings value: another running session
-  // may have just switched profiles in the same file.
-  const activeId = getActiveProviderProfileId()
-  const allProfiles = settings.providerProfiles ?? []
-  const activeProfile = allProfiles.find(p => p.id === activeId)
-
   if (activeProfile) {
-    for (const item of (activeProfile.customModels ??
-      []) as CustomModelDefinition[]) {
+    const activeCustom = (activeProfile.customModels ??
+      []) as CustomModelDefinition[]
+    for (const item of activeCustom) {
       const value = typeof item === 'string' ? item : item.value
       if (!value || options.some(existing => existing.value === value)) {
         continue
@@ -614,6 +623,25 @@ export function getModelOptions(fastMode = false): ModelOption[] {
         descriptionForModel: `${description} (${value})`,
       })
     }
+    if (useCustomProfileModelsOnly && activeCustom.length === 0) {
+      for (const fallback of [
+        activeProfile.sonnetModel,
+        activeProfile.opusModel,
+        activeProfile.haikuModel,
+      ]) {
+        if (
+          fallback &&
+          !options.some(existing => existing.value === fallback)
+        ) {
+          options.push({
+            value: fallback,
+            label: fallback,
+            description: `${activeProfile.name} model`,
+            descriptionForModel: `${activeProfile.name} model (${fallback})`,
+          })
+        }
+      }
+    }
   }
 
   // Models from other saved provider profiles: carry an explicit `profile:<id>:<model>`
@@ -627,9 +655,10 @@ export function getModelOptions(fastMode = false): ModelOption[] {
       description?: string
     }
     const candidates: CandidateModel[] = []
+    const profileCustom = (profile.customModels ??
+      []) as CustomModelDefinition[]
 
-    for (const item of (profile.customModels ??
-      []) as CustomModelDefinition[]) {
+    for (const item of profileCustom) {
       const value = typeof item === 'string' ? item : item.value
       if (value) {
         candidates.push({
@@ -639,23 +668,25 @@ export function getModelOptions(fastMode = false): ModelOption[] {
         })
       }
     }
-    if (profile.sonnetModel) {
-      candidates.push({
-        value: profile.sonnetModel,
-        description: 'Default Sonnet model',
-      })
-    }
-    if (profile.opusModel) {
-      candidates.push({
-        value: profile.opusModel,
-        description: 'Default Opus model',
-      })
-    }
-    if (profile.haikuModel) {
-      candidates.push({
-        value: profile.haikuModel,
-        description: 'Default Haiku model',
-      })
+    if (profileCustom.length === 0) {
+      if (profile.sonnetModel) {
+        candidates.push({
+          value: profile.sonnetModel,
+          description: 'Default Sonnet model',
+        })
+      }
+      if (profile.opusModel) {
+        candidates.push({
+          value: profile.opusModel,
+          description: 'Default Opus model',
+        })
+      }
+      if (profile.haikuModel) {
+        candidates.push({
+          value: profile.haikuModel,
+          description: 'Default Haiku model',
+        })
+      }
     }
 
     const seenInProfile = new Set<string>()

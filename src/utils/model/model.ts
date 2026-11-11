@@ -34,6 +34,10 @@ import {
   CHATGPT_CODEX_FAST_MODEL,
   isChatGPTAuthMode,
 } from './chatgptModels.js'
+import {
+  getActiveProviderProfile,
+  getProfileDefaultModel,
+} from './providerProfiles.js'
 
 export type ModelShortName = string
 export type ModelName = string
@@ -121,15 +125,32 @@ export function getBestModel(): ModelName {
 }
 
 /**
- * Resolve the provider's primary model from its env var (e.g. OPENAI_MODEL).
- * Returns undefined for providers that don't have a primary-model env var
- * (Bedrock, Vertex, Foundry, firstParty).
+ * Resolve the provider's primary model from its env var (e.g. OPENAI_MODEL),
+ * or from the active provider profile's customModels / current session model
+ * when the three tier slots (haikuModel/sonnetModel/opusModel) are omitted.
  */
 function getProviderPrimaryModel(): ModelName | undefined {
   const provider = getAPIProvider()
-  if (provider === 'openai') return process.env.OPENAI_MODEL
-  if (provider === 'gemini') return process.env.GEMINI_MODEL
-  if (provider === 'grok') return process.env.GROK_MODEL
+  if (provider === 'openai' && process.env.OPENAI_MODEL) {
+    return process.env.OPENAI_MODEL
+  }
+  if (provider === 'gemini' && process.env.GEMINI_MODEL) {
+    return process.env.GEMINI_MODEL
+  }
+  if (provider === 'grok' && process.env.GROK_MODEL) {
+    return process.env.GROK_MODEL
+  }
+  const activeProfile = getActiveProviderProfile()
+  if (activeProfile) {
+    const override = getMainLoopModelOverride()
+    if (override && !isModelAlias(override)) {
+      return override
+    }
+    const profileDefault = getProfileDefaultModel(activeProfile)
+    if (profileDefault) {
+      return profileDefault
+    }
+  }
   return undefined
 }
 

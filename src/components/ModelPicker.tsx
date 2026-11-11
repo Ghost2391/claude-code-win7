@@ -133,10 +133,17 @@ export function ModelPicker({
       })),
     [optionsWithInitial],
   );
-  const initialFocusValue = useMemo(
-    () => (selectOptions.some(_ => _.value === initialValue) ? initialValue : (selectOptions[0]?.value ?? undefined)),
-    [selectOptions, initialValue],
-  );
+  const effectiveInitialValue = useMemo(() => {
+    if (selectOptions.some(_ => _.value === initialValue)) {
+      return initialValue;
+    }
+    const defaultModel = getDefaultMainLoopModel();
+    if (selectOptions.some(_ => _.value === defaultModel)) {
+      return defaultModel;
+    }
+    return selectOptions[0]?.value ?? initialValue;
+  }, [selectOptions, initialValue]);
+  const initialFocusValue = effectiveInitialValue;
   const visibleCount = Math.min(maxVisible, selectOptions.length);
   const hiddenCount = Math.max(0, selectOptions.length - visibleCount);
 
@@ -253,7 +260,7 @@ export function ModelPicker({
         <Box flexDirection="column" marginBottom={1}>
           <Box flexDirection="column">
             <Select
-              defaultValue={initialValue}
+              defaultValue={effectiveInitialValue}
               defaultFocusValue={initialFocusValue}
               options={selectOptions}
               onChange={handleSelect}

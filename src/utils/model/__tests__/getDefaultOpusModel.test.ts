@@ -5,9 +5,15 @@ import {
   setSessionSettingsCache,
 } from 'src/utils/settings/settingsCache.js'
 import { ALL_MODEL_CONFIGS } from '../configs.js'
-import { getDefaultOpusModel } from '../model.js'
-import { getOpus46Option } from '../modelOptions.js'
+import {
+  getDefaultHaikuModel,
+  getDefaultOpusModel,
+  getDefaultSonnetModel,
+  getSmallFastModel,
+} from '../model.js'
+import { getModelOptions, getOpus46Option } from '../modelOptions.js'
 import { getModelStrings } from '../modelStrings.js'
+import { resetSessionProviderProfileForTesting } from '../providerProfiles.js'
 
 /**
  * Verifies getDefaultOpusModel() returns Opus 4.7 across all providers
@@ -39,6 +45,7 @@ function resetProviderState(): void {
   resetSettingsCache()
   setSessionSettingsCache({ settings: {}, errors: [] })
   resetModelStringsForTestingOnly()
+  resetSessionProviderProfileForTesting()
 }
 
 describe('getDefaultOpusModel', () => {
@@ -144,5 +151,57 @@ describe('getOpus46Option', () => {
     const opt = getOpus46Option(false)
     expect(opt.descriptionForModel).toBeDefined()
     expect(opt.descriptionForModel).toContain('Opus 4.6')
+  })
+
+  test('customModels-only profile omits default Claude tier slots in getModelOptions and falls back to customModels[0]', () => {
+    setSessionSettingsCache({
+      settings: {
+        modelType: 'openai',
+        activeProviderProfile: 'p1',
+        providerProfiles: [
+          {
+            id: 'p1',
+            name: 'Antigravity',
+            modelType: 'openai',
+            baseURL: 'http://127.0.0.1:8045/v1',
+            customModels: [
+              {
+                value: 'gemini-3.8-flash-medium',
+                label: 'gemini-3.8-flash-medium',
+              },
+              {
+                value: 'claude-sonnet-5-5-medium',
+                label: 'claude-sonnet-5-5-medium',
+              },
+            ],
+          },
+          {
+            id: 'p2',
+            name: 'DeepSeek',
+            modelType: 'openai',
+            baseURL: 'http://127.0.0.1:7863/v1',
+            customModels: [{ value: 'cn:glm-5.3', label: 'glm-5.3(CN)' }],
+          },
+        ],
+      },
+      errors: [],
+    })
+
+    const opts = getModelOptions(false)
+    const values = opts.map(o => o.value)
+    expect(values).toEqual([
+      'gemini-3.8-flash-medium',
+      'claude-sonnet-5-5-medium',
+      'profile:p2:cn:glm-5.3',
+    ])
+    expect(values).not.toContain(null)
+    expect(values).not.toContain('sonnet')
+    expect(values).not.toContain('opus')
+    expect(values).not.toContain('haiku')
+
+    expect(getDefaultSonnetModel()).toBe('gemini-3.8-flash-medium')
+    expect(getDefaultOpusModel()).toBe('gemini-3.8-flash-medium')
+    expect(getDefaultHaikuModel()).toBe('gemini-3.8-flash-medium')
+    expect(getSmallFastModel()).toBe('gemini-3.8-flash-medium')
   })
 })

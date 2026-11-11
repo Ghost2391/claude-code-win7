@@ -31,38 +31,35 @@ describe('resolveOpenAIModel', () => {
     expect(resolveOpenAIModel('claude-sonnet-4-6')).toBe('my-custom-model')
   })
 
-  test('ANTHROPIC_DEFAULT_SONNET_MODEL overrides default map', () => {
+  test('resolves bare family aliases via OPENAI_DEFAULT_*_MODEL or ANTHROPIC_DEFAULT_*_MODEL', () => {
     process.env.ANTHROPIC_DEFAULT_SONNET_MODEL = 'my-sonnet'
-    expect(resolveOpenAIModel('claude-sonnet-4-6')).toBe('my-sonnet')
-  })
-
-  test('ANTHROPIC_DEFAULT_HAIKU_MODEL overrides default map', () => {
     process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = 'my-haiku'
-    expect(resolveOpenAIModel('claude-haiku-4-5-20251001')).toBe('my-haiku')
-  })
-
-  test('ANTHROPIC_DEFAULT_OPUS_MODEL overrides default map', () => {
     process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = 'my-opus'
-    expect(resolveOpenAIModel('claude-opus-4-6')).toBe('my-opus')
+    expect(resolveOpenAIModel('sonnet')).toBe('my-sonnet')
+    expect(resolveOpenAIModel('haiku')).toBe('my-haiku')
+    expect(resolveOpenAIModel('opus')).toBe('my-opus')
   })
 
-  test('maps known Anthropic model via DEFAULT_MODEL_MAP', () => {
-    expect(resolveOpenAIModel('claude-sonnet-4-6')).toBe('gpt-4o')
-  })
-
-  test('maps haiku model', () => {
-    expect(resolveOpenAIModel('claude-haiku-4-5-20251001')).toBe('gpt-4o-mini')
-  })
-
-  test('maps opus model', () => {
-    expect(resolveOpenAIModel('claude-opus-4-6')).toBe('o3')
+  test('passes concrete model names through without hijacking by family substring', () => {
+    process.env.OPENAI_DEFAULT_SONNET_MODEL = 'gemini-3.8-flash-medium'
+    process.env.OPENAI_DEFAULT_OPUS_MODEL = 'gemini-3.8-flash-medium'
+    expect(resolveOpenAIModel('claude-sonnet-5-5-medium')).toBe(
+      'claude-sonnet-5-5-medium',
+    )
+    expect(resolveOpenAIModel('claude-opus-4-6')).toBe('claude-opus-4-6')
+    expect(resolveOpenAIModel('claude-sonnet-4-6')).toBe('claude-sonnet-4-6')
   })
 
   test('passes through unknown model name', () => {
     expect(resolveOpenAIModel('some-random-model')).toBe('some-random-model')
   })
 
-  test('strips [1m] suffix', () => {
-    expect(resolveOpenAIModel('claude-sonnet-4-6[1m]')).toBe('gpt-4o')
+  test('strips context-window bracket suffix', () => {
+    expect(resolveOpenAIModel('claude-sonnet-4-6[1m]')).toBe(
+      'claude-sonnet-4-6',
+    )
+    expect(resolveOpenAIModel('gemini-4-argon-medium[600k]')).toBe(
+      'gemini-4-argon-medium',
+    )
   })
 })
