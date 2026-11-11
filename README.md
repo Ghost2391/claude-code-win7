@@ -161,7 +161,7 @@ bun run build
 | Opus Model   | 高性能模型 ID | `claude-opus-4-6`            |
 
 - ⌨️ **Tab / Shift+Tab** 切换字段，**Enter** 确认并跳到下一个，最后一个字段按 Enter 保存
-- ℹ️ 这三个模型字段现在仅作为回退；需要多模型切换时，推荐在 Provider Profile 里配置 `customModels`（见下节），`/model` 菜单将只展示自定义模型
+- ℹ️ 这三个模型字段会作为该 profile 的默认模型保存；需要多模型切换时，可在 Provider Profile 里配置 `customModels`（见下节）。
 
 > ℹ️ 支持所有 Anthropic API 兼容服务（如 OpenRouter、AWS Bedrock 代理等），只要接口兼容 Messages API 即可。
 
@@ -180,7 +180,7 @@ bun run build
 
 在 `/login` 中选择 **Provider Profiles · manage saved model sets** 可：
 - 列出/激活已保存的 profile
-- 把当前配置（服务商 + 地址 + 密钥 + 自定义模型列表）保存为新的命名 profile
+- 把当前配置（服务商 + 地址 + 密钥 + `haikuModel` / `sonnetModel` / `opusModel`）保存为新的命名 profile；此界面不保存 `customModels`，自定义模型列表需在 `settings.json` 中配置。
 
 **推荐流程**：
 1. `/login` 配好第一套（如 DeepSeek）→ Provider Profiles 里存为命名 profile
@@ -221,8 +221,10 @@ bun run build
 ```
 
 - `customModels` 里的模型名会**原样**发给服务端，不做 `sonnet`/`opus`/`haiku` 名称映射；只有直接写裸别名时才通过 `OPENAI_DEFAULT_*_MODEL` 等环境变量解析。
-- 任一 profile 配置了 `customModels` 后，`/model` 菜单只展示自定义模型，不再注入默认的 Claude 三档模型。
-- 每个条目可写成字符串或 `{ value, label, description, contextWindow }`；旧字段 `haikuModel` / `sonnetModel` / `opusModel` 仍兼容，仅在 `customModels` 为空时作为回退。
+- 任一 profile 的 `customModels` 非空时，`/model` 菜单不再注入内置的 Claude 默认档位。各 profile 优先提供自己的 `customModels`，列表为空时提供该 profile 配置的三档模型；环境变量自定义选项、缓存中的额外选项及当前模型仍可能追加显示。
+- 每个条目可写成字符串或 `{ value, label, description, contextWindow }`。
+- 旧字段 `haikuModel` / `sonnetModel` / `opusModel` 仍兼容：它们会作为该 profile 的默认模型（优先级 `sonnetModel` > `opusModel` > `haikuModel`），三者都为空时才回退到 `customModels[0]`。
+- 默认模型选择与菜单候选列表是两套规则。例如同时配置 `sonnetModel: "legacy-sonnet"` 和 `customModels: ["c1", "c2"]` 时，profile 默认模型仍为 `legacy-sonnet`，菜单候选为 `c1` / `c2`，并会补充显示当前使用的 `legacy-sonnet`。若希望默认使用 `c1`，请省略三个旧字段。
 
 激活的 profile 会自动物化为对应协议族的环境变量（`OPENAI_*` / `GEMINI_*` / `ANTHROPIC_*` / `GROK_*`），运行时模型解析与 API 客户端无需改动。
 
