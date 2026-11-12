@@ -9,7 +9,7 @@ import {
   setSessionSettingsCache,
 } from 'src/utils/settings/settingsCache.js'
 import { ALL_MODEL_CONFIGS } from '../configs.js'
-import { getDefaultOpusModel } from '../model.js'
+import { getDefaultOpusModel, getUserSpecifiedModelSetting } from '../model.js'
 import { getModelOptions, getOpus46Option } from '../modelOptions.js'
 import { getModelStrings } from '../modelStrings.js'
 import { resetSessionProviderProfileForTesting } from '../providerProfiles.js'
@@ -39,6 +39,7 @@ const envKeys = [
   'OPENAI_MODEL',
   'ANTHROPIC_AUTH_TOKEN',
   'OPENAI_API_KEY',
+  'ANTHROPIC_MODEL',
 ] as const
 
 const savedEnv: Record<string, string | undefined> = {}
@@ -53,6 +54,37 @@ function resetProviderState(): void {
 }
 
 describe('getDefaultOpusModel', () => {
+  test('restores the remembered profile model while respecting explicit overrides', () => {
+    const settings = {
+      activeProviderProfile: 'remembered',
+      providerProfiles: [
+        {
+          id: 'remembered',
+          name: 'Remembered',
+          modelType: 'openai',
+          customModels: ['first', 'last'],
+          lastSelectedModel: 'last',
+        },
+      ],
+    }
+    const initial = spyOn(settingsModule, 'getInitialSettings').mockReturnValue(
+      settings as never,
+    )
+    const merged = spyOn(
+      settingsModule,
+      'getSettings_DEPRECATED',
+    ).mockReturnValue(settings as never)
+    try {
+      expect(getUserSpecifiedModelSetting()).toBe('last')
+      process.env.ANTHROPIC_MODEL = 'environment'
+      expect(getUserSpecifiedModelSetting()).toBe('environment')
+      setMainLoopModelOverride('explicit')
+      expect(getUserSpecifiedModelSetting()).toBe('explicit')
+    } finally {
+      initial.mockRestore()
+      merged.mockRestore()
+    }
+  })
   beforeEach(() => {
     for (const key of envKeys) {
       savedEnv[key] = process.env[key]

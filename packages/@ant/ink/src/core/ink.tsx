@@ -1039,6 +1039,12 @@ export default class Ink {
    * as restoring the saved cursor position — clobbering the resume hint.
    */
   detachForShutdown(): void {
+    if (!this.isUnmounted && !this.altScreenActive && this.options.stdout.isTTY) {
+      const cursor = this.displayCursor ?? this.frontFrame.cursor;
+      const rowsBelow = Math.max(0, this.frontFrame.screen.height - cursor.y);
+      writeSync(1, '\x1b[0m\r' + cursorMove(0, rowsBelow) + '\x1b[J\r\n');
+      this.displayCursor = null;
+    }
     this.isUnmounted = true;
     // Cancel any pending throttled render so it doesn't fire between
     // cleanupTerminalModes() and process.exit() and write to main screen.

@@ -224,6 +224,7 @@ bun run build
 - 任一 profile 的 `customModels` 非空时，`/model` 菜单不再注入内置的 Claude 默认档位。各 profile 优先提供自己的 `customModels`，列表为空时提供该 profile 配置的三档模型；环境变量自定义选项、缓存中的额外选项及当前模型仍可能追加显示。
 - 每个条目可写成字符串或 `{ value, label, description, contextWindow }`。
 - 旧字段 `haikuModel` / `sonnetModel` / `opusModel` 仍兼容：它们会作为该 profile 的默认模型（优先级 `sonnetModel` > `opusModel` > `haikuModel`），三者都为空时才回退到 `customModels[0]`。
+- 通过 `/model` 菜单或命令选择的模型会保存为当前 profile 的 `lastSelectedModel`，下次启动优先恢复；未启用 profile 时保存到用户设置的 `model`。`/model default` 清除该记忆，显式 `--model` 和 `ANTHROPIC_MODEL` 仍优先。此记忆按 profile 共享，不是每个历史会话的独立模型快照。
 - 默认模型选择与菜单候选列表是两套规则。例如同时配置 `sonnetModel: "legacy-sonnet"` 和 `customModels: ["c1", "c2"]` 时，profile 默认模型仍为 `legacy-sonnet`，菜单候选为 `c1` / `c2`，并会补充显示当前使用的 `legacy-sonnet`。若希望默认使用 `c1`，请省略三个旧字段。
 
 激活的 profile 会自动物化为对应协议族的环境变量（`OPENAI_*` / `GEMINI_*` / `ANTHROPIC_*` / `GROK_*`），运行时模型解析与 API 客户端无需改动。

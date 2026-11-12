@@ -35,6 +35,7 @@ export type ProviderProfile = {
   opusModel?: string
   contextWindow?: number | string
   customModels?: CustomModelDefinition[]
+  lastSelectedModel?: string
 }
 
 /**
@@ -130,6 +131,20 @@ export function getProfileDefaultModel(
   const first = profile.customModels?.[0]
   if (!first) return undefined
   return typeof first === 'string' ? first : first.value
+}
+
+export function rememberSelectedModel(model: string | null): void {
+  const activeId = getActiveProviderProfileId()
+  if (activeId) {
+    const profiles = getProviderProfiles().map(profile =>
+      profile.id === activeId
+        ? { ...profile, lastSelectedModel: model ?? undefined }
+        : profile,
+    )
+    updateSettingsForSource('userSettings', { providerProfiles: profiles })
+  } else {
+    updateSettingsForSource('userSettings', { model: model ?? undefined })
+  }
 }
 
 /** Materialize the active profile's fields into process.env + clear caches. */

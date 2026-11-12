@@ -59,6 +59,35 @@ afterEach(() => {
 })
 
 describe('providerProfiles', () => {
+  test('remembers model choices per profile without changing defaults', async () => {
+    const {
+      saveProviderProfile,
+      activateProviderProfile,
+      rememberSelectedModel,
+      getActiveProviderProfile,
+      getProfileDefaultModel,
+    } = await import('../providerProfiles.js')
+    const first = saveProviderProfile({
+      name: 'First',
+      modelType: 'openai',
+      customModels: ['c1', 'c2'],
+    })
+    const second = saveProviderProfile({
+      name: 'Second',
+      modelType: 'openai',
+      customModels: ['d1'],
+    })
+    activateProviderProfile(first)
+    rememberSelectedModel('c2')
+    activateProviderProfile(second)
+    expect(getActiveProviderProfile()?.lastSelectedModel).toBeUndefined()
+    activateProviderProfile(first)
+    expect(getActiveProviderProfile()?.lastSelectedModel).toBe('c2')
+    expect(getProfileDefaultModel(getActiveProviderProfile()!)).toBe('c1')
+    rememberSelectedModel(null)
+    expect(getActiveProviderProfile()?.lastSelectedModel).toBeUndefined()
+  })
+
   test('preserves environment configuration without an active profile', async () => {
     const { materializeActiveProvider } = await import('../providerProfiles.js')
     process.env.OPENAI_API_KEY = 'external-key'

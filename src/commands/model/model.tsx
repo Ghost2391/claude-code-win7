@@ -31,6 +31,7 @@ import {
   resolveProfileAndModel,
   switchProfile,
   getActiveProviderProfileId,
+  rememberSelectedModel,
 } from '../../utils/model/providerProfiles.js';
 import { applyConfigEnvironmentVariables } from '../../utils/managedEnv.js';
 
@@ -71,6 +72,7 @@ function ModelPickerWrapper({
 
     const finalModel = modelName;
     setMainLoopModelOverride(finalModel);
+    rememberSelectedModel(finalModel);
     setAppState(prev => ({
       ...prev,
       mainLoopModel: finalModel,
@@ -207,6 +209,7 @@ function SetModelAndClose({
 
       function setModel(modelValue: string | null): void {
         setMainLoopModelOverride(modelValue);
+        rememberSelectedModel(modelValue);
         setAppState(prev => ({
           ...prev,
           mainLoopModel: modelValue,

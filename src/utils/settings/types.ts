@@ -388,6 +388,7 @@ export const SettingsSchema = lazySchema(() =>
               .optional()
               .describe('Endpoint base URL for this profile'),
             apiKey: z.string().optional().describe('API key for this profile'),
+            lastSelectedModel: z.string().optional(),
             haikuModel: z
               .string()
               .optional()
