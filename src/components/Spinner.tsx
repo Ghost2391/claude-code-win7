@@ -381,12 +381,16 @@ function SpinnerWithVerbInner({
         <Box width="100%" flexDirection="column">
           {budgetText && (
             <MessageResponse>
-              <Text dimColor>{budgetText}</Text>
+              <Text dimColor wrap="truncate-end">
+                {budgetText}
+              </Text>
             </MessageResponse>
           )}
           {(nextTask || effectiveTip) && (
             <MessageResponse>
-              <Text dimColor>{nextTask ? `Next: ${nextTask.subject}` : `Tip: ${effectiveTip}`}</Text>
+              <Text dimColor wrap="truncate-end">
+                {nextTask ? `Next: ${nextTask.subject}` : `Tip: ${effectiveTip}`}
+              </Text>
             </MessageResponse>
           )}
         </Box>

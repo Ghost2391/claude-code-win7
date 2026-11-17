@@ -12,11 +12,6 @@ import type { Command, LocalCommandResult } from '../../types/command.js'
  * session-independent: it persists across restarts so the user only needs to
  * run `/tui on` once.
  *
- * Shell-profile integration: add the following to ~/.bashrc / ~/.zshrc to
- * auto-enable TUI mode when the marker is present:
- *
- *   [ -f "$HOME/.claude/.tui-mode" ] && export CLAUDE_CODE_NO_FLICKER=1
- *
  * Note: setting CLAUDE_CODE_NO_FLICKER at runtime cannot retroactively enter
  * the alternate screen buffer — the Ink render tree is already mounted. The
  * change takes effect on the NEXT session start.
@@ -46,8 +41,7 @@ const USAGE_TEXT = [
   'flicker.  The setting is stored in ~/.claude/.tui-mode and takes effect',
   'on the next session start.',
   '',
-  'Shell-profile integration (auto-enable on every start):',
-  '  [ -f "$HOME/.claude/.tui-mode" ] && export CLAUDE_CODE_NO_FLICKER=1',
+  'The application reads this setting automatically on session start.',
   '',
   'Environment override:',
   '  CLAUDE_CODE_NO_FLICKER=1   force on (overrides marker)',
@@ -66,9 +60,7 @@ function enableTui(): LocalCommandResult {
       `Marker written: \`${markerPath}\``,
       '',
       'Flicker-free alternate-screen rendering will be active on the next',
-      'session start.  Add this to your shell profile to make it permanent:',
-      '',
-      '  [ -f "$HOME/.claude/.tui-mode" ] && export CLAUDE_CODE_NO_FLICKER=1',
+      'session start. No shell-profile changes are needed.',
       '',
       'To disable: `/tui off`',
     ].join('\n'),

@@ -5837,6 +5837,9 @@ export function REPL({
               {process.env.USER_TYPE === 'ant' && <TungstenLiveMonitor />}
               {/* WebBrowserPanel removed — browser-lite, no panel */}
               <Box flexGrow={1} />
+              {!showSpinner && isLoading && !toolJSX && !isBriefOnly && !isFullscreenEnvEnabled() && (
+                <Box height={2} flexShrink={0} />
+              )}
               {showSpinner && (
                 <SpinnerWithVerb
                   mode={streamMode}
