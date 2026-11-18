@@ -1138,13 +1138,6 @@ export function REPL({
   // Ref for the synchronous restore callback — set after restoreMessageSync is
   // defined, read in the onQuery finally block for auto-restore on interrupt.
   const restoreMessageSyncRef = useRef<(m: UserMessage) => void>(() => {});
-  const latestSubmitSerialRef = useRef(0);
-  const activeQuerySubmitSerialRef = useRef(0);
-  // UUID of the user message the currently running query was started from.
-  // The auto-restore path must only ever rewind THIS message — if a newer
-  // submit landed (or the message list moved on), restoring the "last user
-  // message" would swallow input the user already sent.
-  const activeQueryUserMessageUuidRef = useRef<string | undefined>(undefined);
 
   // Ref to the fullscreen layout's scroll box for keyboard scrolling.
   // Null when fullscreen mode is disabled (ref never attached).
@@ -3254,9 +3247,6 @@ export function REPL({
       mainLoopModelParam: string,
       effort?: EffortValue,
     ) => {
-      // Remember which user message this query runs for, so the interrupt
-      // auto-restore can never rewind a different (newer) submission.
-      activeQueryUserMessageUuidRef.current = newMessages.findLast(m => m.type === 'user' && !m.isMeta)?.uuid;
       // Prepare IDE integration for new prompt. Read mcpClients fresh from
       // store — useManageMCPConnections may have populated it since the
       // render that captured this closure (same pattern as computeTools).
@@ -3738,17 +3728,13 @@ export function REPL({
         if (
           abortController.signal.reason === 'user-cancel' &&
           !queryGuard.isActive &&
-          latestSubmitSerialRef.current === activeQuerySubmitSerialRef.current &&
           inputValueRef.current === '' &&
           getCommandQueueLength() === 0 &&
           !store.getState().viewingAgentTaskId
         ) {
           const msgs = messagesRef.current;
           const lastUserMsg = msgs.findLast(selectableUserMessagesFilter);
-          // Only rewind the exact message this query was submitted from.
-          // Anything else means the conversation moved on — never remove or
-          // restore it (losing a stray prompt is better than swallowing it).
-          if (lastUserMsg && lastUserMsg.uuid === activeQueryUserMessageUuidRef.current) {
+          if (lastUserMsg) {
             const idx = msgs.lastIndexOf(lastUserMsg);
             if (messagesAfterAreOnlySynthetic(msgs, idx)) {
               // The submit is being undone — undo its history entry too,
@@ -3898,11 +3884,6 @@ export function REPL({
       },
       options?: { fromKeybinding?: boolean },
     ) => {
-      const submitSerial = ++latestSubmitSerialRef.current;
-      if (!isLoading || speculationAccept || activeRemote.isRemoteMode) {
-        activeQuerySubmitSerialRef.current = submitSerial;
-      }
-
       // Re-pin scroll to bottom on submit so the user always sees the new
       // exchange (matches OpenCode's auto-scroll behavior).
       repinScroll();

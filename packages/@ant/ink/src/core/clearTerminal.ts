@@ -30,9 +30,6 @@ function isMintty(): boolean {
 }
 
 function isModernWindowsTerminal(): boolean {
-  if (process.env.TERMINAL_EMULATOR === 'JetBrains-JediTerm') {
-    return true
-  }
   // Windows Terminal sets WT_SESSION environment variable
   if (isWindowsTerminal()) {
     return true

@@ -3,7 +3,6 @@ import { getIsInteractive } from '../bootstrap/state.js'
 import { logForDebugging } from './debug.js'
 import { isEnvDefinedFalsy, isEnvTruthy } from './envUtils.js'
 import { execFileNoThrow } from './execFileNoThrow.js'
-import { getStartupTuiPreference } from './tuiPreference.js'
 
 let loggedTmuxCcDisable = false
 let checkedTmuxMouseHint = false
@@ -111,7 +110,6 @@ export function _resetTmuxControlModeProbeForTesting(): void {
  * opt in).
  */
 export function isFullscreenEnvEnabled(): boolean {
-  const savedPreference = getStartupTuiPreference()
   // Explicit user opt-out always wins.
   if (isEnvDefinedFalsy(process.env.CLAUDE_CODE_NO_FLICKER)) return false
   // Explicit opt-in overrides auto-detection (escape hatch).
@@ -127,7 +125,7 @@ export function isFullscreenEnvEnabled(): boolean {
     }
     return false
   }
-  return savedPreference || process.env.USER_TYPE === 'ant'
+  return process.env.USER_TYPE === 'ant'
 }
 
 /**

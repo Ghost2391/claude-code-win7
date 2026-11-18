@@ -17,7 +17,6 @@ import {
 
 const ESC = '\x1b'
 const ERASE_SCREEN = `${ESC}[2J`
-const ERASE_SCROLLBACK = `${ESC}[3J`
 const EL = `${ESC}[K`
 const cup = (row: number, col: number) => `${ESC}[${row};${col}H`
 
@@ -27,7 +26,6 @@ describe('isLegacyWindowsConsole', () => {
     'TERM_PROGRAM',
     'TERM_PROGRAM_VERSION',
     'MSYSTEM',
-    'TERMINAL_EMULATOR',
   ]
   const origPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
   let savedEnv: Record<string, string | undefined>
@@ -66,12 +64,6 @@ describe('isLegacyWindowsConsole', () => {
     expect(isLegacyWindowsConsole()).toBe(false)
   })
 
-  test('false on Windows JetBrains terminal', () => {
-    setPlatform('win32')
-    process.env.TERMINAL_EMULATOR = 'JetBrains-JediTerm'
-    expect(isLegacyWindowsConsole()).toBe(false)
-  })
-
   test('false on mintty / Git Bash (MSYSTEM set)', () => {
     setPlatform('win32')
     process.env.MSYSTEM = 'MINGW64'
@@ -93,7 +85,7 @@ describe('legacyWindowsViewportRepaint', () => {
       [0, 4, 'E'],
       [0, 7, 'H'],
     ])
-    const content = contentOf(viewportRepaint(frame, stylePool))
+    const content = contentOf(viewportRepaint(frame, stylePool, true))
     expect(content).toContain(cup(1, 1) + EL + 'E')
     expect(content).toContain(cup(4, 1) + EL + 'H')
     expect(content).not.toContain('D')
@@ -140,6 +132,7 @@ describe('legacyWindowsViewportRepaint', () => {
   }
 
   test('frame taller than viewport: absolute repaint of bottom rows, no clear-screen', () => {
+    // screen 10x8, viewport 10x5 → bottom 5 rows visible; 'A' on last row.
     const { frame, stylePool } = makeFrame(10, 8, 10, 5, [[0, 7, 'A']])
     const content = contentOf(legacyWindowsViewportRepaint(frame, stylePool))
 
@@ -149,10 +142,11 @@ describe('legacyWindowsViewportRepaint', () => {
     expect(content).toContain(cup(1, 1)) // first visible physical row
     expect(content).toContain(cup(5, 1)) // last visible physical row (vh = 5)
     expect(content).toContain(EL)
-    expect(content).toContain('A')
+    expect(content).toContain('A') // screen row 7 maps to physical row 5
 
-    expect(content.endsWith(cup(5, 1))).toBe(true)
-    expect(content).not.toContain('\n')
+    // Cursor end-state: content fills the viewport → park at bottom + one LF
+    // (mirrors the normal full-reset's trailing scroll).
+    expect(content.endsWith(`${cup(5, 1)}\n`)).toBe(true)
   })
 
   test('never emits a clearTerminal patch', () => {
@@ -161,11 +155,10 @@ describe('legacyWindowsViewportRepaint', () => {
     expect(diff.every(patch => patch.type !== 'clearTerminal')).toBe(true)
   })
 
-  test('main-screen full reset never wipes the scrollback', () => {
+  test('main-screen full reset repaints the viewport instead of clearing scrollback', () => {
     // Regression: a full reset used to emit ESC[2J/ESC[3J + home, wiping the
     // terminal scrollback and yanking the viewport to the top of the
-    // repainted frame ("chat jumped back to the beginning"). Every main-screen
-    // reset now erases only the visible screen and repaints by absolute row.
+    // repainted frame ("chat jumped back to the beginning").
     const { prev, next, stylePool } = makeScrollbackChangeFrames()
     const log = new LogUpdate({ isTTY: true, stylePool })
 
@@ -180,22 +173,10 @@ describe('legacyWindowsViewportRepaint', () => {
       )
       .map(patch => patch.content)
       .join('')
-    expect(text.includes(ERASE_SCROLLBACK)).toBe(false)
     expect(text.includes(ERASE_SCREEN)).toBe(false)
+    // Absolute repaint of the visible viewport (frame rows 15..19 → 1..5).
     expect(text).toContain(cup(1, 1))
     expect(text).toContain(cup(5, 1))
-  })
-
-  test('CLAUDE_CODE_FULL_CLEAR_ON_RESET restores the clear-everything path', () => {
-    const { prev, next, stylePool } = makeScrollbackChangeFrames()
-    const log = new LogUpdate({ isTTY: true, stylePool })
-    process.env.CLAUDE_CODE_FULL_CLEAR_ON_RESET = '1'
-    try {
-      const diff = log.render(prev, next, false)
-      expect(diff.some(patch => patch.type === 'clearTerminal')).toBe(true)
-    } finally {
-      delete process.env.CLAUDE_CODE_FULL_CLEAR_ON_RESET
-    }
   })
 
   test('alt-screen full reset still clears (no scrollback to preserve)', () => {
@@ -361,7 +342,6 @@ describe('main-screen height change self-heal', () => {
 
     expect(text).toContain(cup(1, 1))
     expect(text.includes(ERASE_SCREEN)).toBe(false)
-    expect(text.includes(ERASE_SCROLLBACK)).toBe(false)
   })
 
   test('a frame that fits the viewport keeps the cheap incremental path', () => {

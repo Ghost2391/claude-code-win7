@@ -22,9 +22,11 @@ import {
 import { isEnvTruthy } from '../envUtils.js'
 import { getModelStrings, resolveOverriddenModel } from './modelStrings.js'
 import { formatModelPricing, getOpus46CostTier } from '../modelCost.js'
+import { getSettings_DEPRECATED } from '../settings/settings.js'
 import type { PermissionMode } from '../permissions/PermissionMode.js'
 import { getAPIProvider, isFirstPartyAnthropicBaseUrl } from './providers.js'
 import { LIGHTNING_BOLT } from '../../constants/figures.js'
+import { isModelAllowed } from './modelAllowlist.js'
 import { type ModelAlias, isModelAlias } from './aliases.js'
 import { capitalize } from '../stringUtils.js'
 import {
@@ -79,10 +81,28 @@ export function isNonCustomOpusModel(model: ModelName): boolean {
  * 3. ANTHROPIC_MODEL environment variable
  * 4. Settings (from user's saved settings)
  */
-// Defined in its own module so tests can exercise the real precedence without
-// the process-global mock.module stubs of model.js installed by other suites.
-import { getUserSpecifiedModelSetting } from './userModelSetting.js'
-export { getUserSpecifiedModelSetting }
+export function getUserSpecifiedModelSetting(): ModelSetting | undefined {
+  let specifiedModel: ModelSetting | undefined
+
+  const modelOverride = getMainLoopModelOverride()
+  if (modelOverride !== undefined) {
+    specifiedModel = modelOverride
+  } else {
+    const settings = getSettings_DEPRECATED() || {}
+    specifiedModel =
+      process.env.ANTHROPIC_MODEL ||
+      getActiveProviderProfile()?.lastSelectedModel ||
+      settings.model ||
+      undefined
+  }
+
+  // Ignore the user-specified model if it's not in the availableModels allowlist.
+  if (specifiedModel && !isModelAllowed(specifiedModel)) {
+    return undefined
+  }
+
+  return specifiedModel
+}
 
 /**
  * Get the main loop model to use for the current session.

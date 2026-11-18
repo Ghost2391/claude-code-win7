@@ -9,8 +9,7 @@ import {
   setSessionSettingsCache,
 } from 'src/utils/settings/settingsCache.js'
 import { ALL_MODEL_CONFIGS } from '../configs.js'
-import { getDefaultOpusModel } from '../model.js'
-import { pickUserSpecifiedModel } from '../userModelSetting.js'
+import { getDefaultOpusModel, getUserSpecifiedModelSetting } from '../model.js'
 import { getModelOptions, getOpus46Option } from '../modelOptions.js'
 import { getModelStrings } from '../modelStrings.js'
 import { resetSessionProviderProfileForTesting } from '../providerProfiles.js'
@@ -56,23 +55,35 @@ function resetProviderState(): void {
 
 describe('getDefaultOpusModel', () => {
   test('restores the remembered profile model while respecting explicit overrides', () => {
-    // Pure precedence rule: override > ANTHROPIC_MODEL > remembered choice >
-    // saved settings.model.
-    expect(
-      pickUserSpecifiedModel(undefined, undefined, 'last', undefined),
-    ).toBe('last')
-    expect(
-      pickUserSpecifiedModel(undefined, 'environment', 'last', 'saved'),
-    ).toBe('environment')
-    expect(
-      pickUserSpecifiedModel('explicit', 'environment', 'last', 'saved'),
-    ).toBe('explicit')
-    expect(
-      pickUserSpecifiedModel(undefined, undefined, undefined, 'saved'),
-    ).toBe('saved')
-    expect(
-      pickUserSpecifiedModel(undefined, undefined, undefined, undefined),
-    ).toBe(undefined)
+    const settings = {
+      activeProviderProfile: 'remembered',
+      providerProfiles: [
+        {
+          id: 'remembered',
+          name: 'Remembered',
+          modelType: 'openai',
+          customModels: ['first', 'last'],
+          lastSelectedModel: 'last',
+        },
+      ],
+    }
+    const initial = spyOn(settingsModule, 'getInitialSettings').mockReturnValue(
+      settings as never,
+    )
+    const merged = spyOn(
+      settingsModule,
+      'getSettings_DEPRECATED',
+    ).mockReturnValue(settings as never)
+    try {
+      expect(getUserSpecifiedModelSetting()).toBe('last')
+      process.env.ANTHROPIC_MODEL = 'environment'
+      expect(getUserSpecifiedModelSetting()).toBe('environment')
+      setMainLoopModelOverride('explicit')
+      expect(getUserSpecifiedModelSetting()).toBe('explicit')
+    } finally {
+      initial.mockRestore()
+      merged.mockRestore()
+    }
   })
   beforeEach(() => {
     for (const key of envKeys) {
