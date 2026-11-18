@@ -65,8 +65,11 @@ function ModelPickerWrapper({
     const { profileId, modelName, profile } = resolveProfileAndModel(model);
     let switchedProfile = false;
     if (profileId && profileId !== getActiveProviderProfileId()) {
-      switchProfile(profileId);
+      // Managed env (settings.env) must be applied BEFORE the profile, or it
+      // overwrites the profile's baseURL/apiKey and the first request keeps
+      // hitting the previous provider's endpoint/model.
       applyConfigEnvironmentVariables();
+      switchProfile(profileId);
       switchedProfile = true;
     }
 
@@ -146,8 +149,9 @@ function SetModelAndClose({
       const { profileId, modelName: resolvedModelName, profile } = resolveProfileAndModel(model);
       let switchedProfile = false;
       if (profileId && profileId !== getActiveProviderProfileId()) {
-        switchProfile(profileId);
+        // Apply managed env first so it cannot clobber the profile's env.
         applyConfigEnvironmentVariables();
+        switchProfile(profileId);
         switchedProfile = true;
       }
       const effectiveModel = resolvedModelName;

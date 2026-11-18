@@ -296,8 +296,11 @@ function handleProfileCommand(
       value: `Unknown provider profile: ${sub}\nUsage: /provider profile list | <id> | rm <id> | off`,
     }
   }
-  activateProviderProfile(profile.id)
+  // Apply managed env first: applying it after activate would restore
+  // settings.env values (e.g. the previous provider's base URL) on top of the
+  // profile we just materialized.
   applyConfigEnvironmentVariables()
+  activateProviderProfile(profile.id)
   const model = applyProfileModel(profile, context)
   return {
     type: 'text',
