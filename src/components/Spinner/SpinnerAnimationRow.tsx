@@ -284,15 +284,7 @@ export function SpinnerAnimationRow({
     ) : null;
 
   return (
-    <Box
-      ref={viewportRef}
-      flexDirection="row"
-      flexWrap="nowrap"
-      height={1}
-      overflow="hidden"
-      marginTop={1}
-      width="100%"
-    >
+    <Box ref={viewportRef} flexDirection="row" flexWrap="wrap" marginTop={1} width="100%">
       <SpinnerGlyph
         frame={frame}
         messageColor={messageColor}

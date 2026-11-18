@@ -191,12 +191,6 @@ export function CollapsedReadSearchContent({
   }
 
   const displayedHint = useMinDisplayTime(incomingHint, MIN_HINT_DISPLAY_MS);
-  const stableHintRef = useRef<string | undefined>(undefined);
-  const stableLayout = !isFullscreenEnvEnabled();
-  if (isActiveGroup && displayedHint !== undefined) {
-    stableHintRef.current = displayedHint;
-  }
-  const visibleHint = stableLayout ? stableHintRef.current : displayedHint;
 
   // In verbose mode, render each tool use with its 1-line result summary
   if (verbose) {
@@ -482,7 +476,7 @@ export function CollapsedReadSearchContent({
     <Box flexDirection="column" marginTop={1} backgroundColor={bg}>
       <Box flexDirection="row">
         {isActiveGroup ? <ToolUseLoader shouldAnimate isUnresolved isError={anyError} /> : <Box minWidth={2} />}
-        <Text dimColor={!isActiveGroup} wrap={stableLayout ? 'truncate-end' : 'wrap'}>
+        <Text dimColor={!isActiveGroup}>
           {nonMemParts}
           {memParts}
           {feature('TEAMMEM')
@@ -495,7 +489,7 @@ export function CollapsedReadSearchContent({
           {isActiveGroup && <Text key="ellipsis">…</Text>} <CtrlOToExpand />
         </Text>
       </Box>
-      {(isActiveGroup || stableLayout) && visibleHint !== undefined && (
+      {isActiveGroup && displayedHint !== undefined && (
         // Row layout: 5-wide gutter for ⎿, then a flex column for the text.
         // Ink's wrap stays inside the right column so continuation lines
         // indent under ⎿. MAX_HINT_CHARS in commandAsHint caps total at ~5 lines.
@@ -503,20 +497,13 @@ export function CollapsedReadSearchContent({
           <Box width={5} flexShrink={0}>
             <Text dimColor>{'  ⎿  '}</Text>
           </Box>
-          <Box flexDirection="column" flexGrow={1} minWidth={0}>
-            {stableLayout ? (
-              <Text dimColor wrap="truncate-end">
-                {visibleHint.replace(/\s*\n\s*/g, ' ')}
-                {isActiveGroup && shellProgressSuffix}
+          <Box flexDirection="column" flexGrow={1}>
+            {displayedHint.split('\n').map((line, i, arr) => (
+              <Text key={`hint-${i}`} dimColor>
+                {line}
+                {i === arr.length - 1 && shellProgressSuffix}
               </Text>
-            ) : (
-              visibleHint.split('\n').map((line, i, arr) => (
-                <Text key={`hint-${i}`} dimColor>
-                  {line}
-                  {i === arr.length - 1 && shellProgressSuffix}
-                </Text>
-              ))
-            )}
+            ))}
           </Box>
         </Box>
       )}
