@@ -30,9 +30,6 @@ function isMintty(): boolean {
 }
 
 function isModernWindowsTerminal(): boolean {
-  if (process.env.TERMINAL_EMULATOR === 'JetBrains-JediTerm') {
-    return true
-  }
   // Windows Terminal sets WT_SESSION environment variable
   if (isWindowsTerminal()) {
     return true
@@ -52,27 +49,7 @@ function isModernWindowsTerminal(): boolean {
     return true
   }
 
-  // xterm.js (browser terminal via --web mode) is a fully capable terminal
-  if (process.env.TERM_PROGRAM === 'xterm.js') {
-    return true
-  }
-
   return false
-}
-
-/**
- * True on a legacy Windows console (conhost via Node/libuv) that lacks native
- * VT: it silently drops the alt-screen switch (ESC[?1049h) and the scrollback
- * clear (ESC[3J). This is the EXACT condition under which
- * getClearTerminalSequence() falls into its legacy branch (ESC[2J only, no
- * ESC[3J) — so a full-frame repaint can't wipe the scrollback copy and old
- * frames stack. Modern Windows terminals (Windows Terminal / VS Code / mintty)
- * are excluded because they handle ESC[3J and don't stack.
- *
- * Covers any Windows running in a non-modern console (legacy conhost).
- */
-export function isLegacyWindowsConsole(): boolean {
-  return process.platform === 'win32' && !isModernWindowsTerminal()
 }
 
 /**
