@@ -23,6 +23,7 @@ import {
 import {
   CURSOR_HOME,
   cursorPosition,
+  cursorTo,
   scrollDown as csiScrollDown,
   scrollUp as csiScrollUp,
   eraseToEndOfLine,
@@ -55,6 +56,10 @@ const STEADY_STATE_REPAINT_INTERVAL = 64
 export class LogUpdate {
   private state: State
   private framesSinceViewportRepaint = 0
+  // Height the frame shrank from while overflowing. Until it grows back past
+  // this, growth repaints the window instead of appending — appending would
+  // scroll the re-shown rows into scrollback a second time.
+  private overflowShrinkRecoveryHeight = 0
 
   constructor(private readonly options: Options) {
     this.state = {
@@ -74,6 +79,7 @@ export class LogUpdate {
   reset(): void {
     this.state.previousOutput = ''
     this.framesSinceViewportRepaint = 0
+    this.overflowShrinkRecoveryHeight = 0
   }
 
   private renderFullFrame(frame: Frame): Diff {
@@ -199,6 +205,35 @@ export class LogUpdate {
     const isShrinking = next.screen.height < prev.screen.height
     const nextFitsViewport = next.screen.height <= prev.viewport.height
 
+    // Shrinking an overflowing frame: rows that would be left over at the
+    // bottom can't be removed without a reset (relative erases leave the
+    // window misaligned on the next diff). Reset the visible screen only —
+    // scrollback is preserved, so there is no jump to the top and no flash of
+    // cleared history.
+    if (
+      !altScreen &&
+      isShrinking &&
+      prev.screen.height >= prev.viewport.height &&
+      prev.viewport.height > 0
+    ) {
+      this.framesSinceViewportRepaint = 0
+      this.overflowShrinkRecoveryHeight = Math.max(
+        this.overflowShrinkRecoveryHeight,
+        prev.screen.height,
+      )
+      return fullResetSequence_CAUSES_FLICKER(
+        next,
+        'offscreen',
+        stylePool,
+        false,
+      )
+    }
+
+    // A frame that fits the viewport is back on the plain append path.
+    if (next.screen.height <= next.viewport.height) {
+      this.overflowShrinkRecoveryHeight = 0
+    }
+
     // When shrinking from above-viewport to at-or-below-viewport, content that
     // was in scrollback should now be visible. Terminal clear operations can't
     // bring scrollback content into view, so we need a full reset.
@@ -235,6 +270,12 @@ export class LogUpdate {
         }
       })
       if (scrollbackChangeY >= 0) {
+        // The repaint re-shows rows that may already be in history; keep the
+        // following growth on the repaint path so they are not appended again.
+        this.overflowShrinkRecoveryHeight = Math.max(
+          this.overflowShrinkRecoveryHeight,
+          prev.screen.height,
+        )
         const prevLine = readLine(prev.screen, scrollbackChangeY)
         const nextLine = readLine(next.screen, scrollbackChangeY)
         return fullResetSequence_CAUSES_FLICKER(
@@ -403,6 +444,13 @@ export class LogUpdate {
       }
     })
     if (needsFullReset) {
+      // Same as above: avoid re-appending the re-shown rows on later growth.
+      if (!altScreen) {
+        this.overflowShrinkRecoveryHeight = Math.max(
+          this.overflowShrinkRecoveryHeight,
+          prev.screen.height,
+        )
+      }
       return fullResetSequence_CAUSES_FLICKER(
         next,
         'offscreen',
@@ -437,12 +485,20 @@ export class LogUpdate {
     // bookkeeping can land one row off (old rows showing through between new
     // ones). Repaint the visible viewport by absolute row for that frame only.
     if (growing) {
+      if (!altScreen && this.overflowShrinkRecoveryHeight > 0) {
+        if (next.screen.height <= this.overflowShrinkRecoveryHeight) {
+          this.framesSinceViewportRepaint = 0
+          return viewportRepaint(next, this.options.stylePool)
+        }
+        this.overflowShrinkRecoveryHeight = 0
+      }
       renderFrameSlice(
         screen,
         next,
         prev.screen.height,
         next.screen.height,
         stylePool,
+        !altScreen,
       )
       if (
         !altScreen &&
@@ -506,7 +562,7 @@ export class LogUpdate {
       this.framesSinceViewportRepaint += 1
       if (this.framesSinceViewportRepaint >= STEADY_STATE_REPAINT_INTERVAL) {
         this.framesSinceViewportRepaint = 0
-        screen.diff.push(...viewportRepaint(next, stylePool, true))
+        screen.diff.push(...viewportRepaint(next, stylePool))
       }
     }
 
@@ -567,34 +623,22 @@ function fullResetSequence_CAUSES_FLICKER(
   altScreen: boolean,
   debug?: { triggerY: number; prevLine: string; nextLine: string },
 ): Diff {
-  // Main screen (no alt-screen): NEVER clear.
-  //
-  // clearTerminal is ESC[2J + ESC[3J + home — it wipes the terminal's
-  // scrollback and repaints the frame from the top. In a long session the
-  // frame is taller than the viewport, so any change to a row that already
-  // scrolled into scrollback (an older message re-rendering, a shrinking
-  // layout, a resize) used to nuke the user's entire history and leave the
-  // viewport sitting at the top of the freshly painted frame. From the user's
-  // perspective the conversation "suddenly jumped back to the very
-  // beginning" — sometimes with no input at all.
-  //
-  // Instead repaint only the VISIBLE viewport by absolute position: no
-  // clear, no scroll, scrollback untouched. A user who scrolled up in the
-  // terminal keeps their position; the app repaints the rows they can see.
-  //
-  // (Historically this path was Windows-conhost-only — see the conhost
-  // quirk notes in viewportRepaint — but the scrollback wipe is a bug on
-  // every terminal.)
-  //
-  // Escape hatch: CLAUDE_CODE_FULL_CLEAR_ON_RESET=1 restores the old
-  // clear-everything behavior for terminals with broken CUP handling.
+  // Main screen: repaint only the VISIBLE viewport by absolute position. No
+  // clear, no scroll, scrollback untouched — a clear+rebuild wipes the
+  // scrollback (conversation "jumps back to the top") and flashes the whole
+  // screen. The explicit escape hatch restores the clear-everything path for
+  // terminals whose absolute positioning is broken.
   if (!altScreen && process.env.CLAUDE_CODE_FULL_CLEAR_ON_RESET !== '1') {
+    // Repaint only the VISIBLE viewport in place. Every row is rewritten with
+    // ESC[K first, so no stale content is left over — and because there is no
+    // screen/scrollback erase at all, the update is invisible in steady state
+    // (no flash) and never deletes history (no "jump back to the top").
     return viewportRepaint(frame, stylePool)
   }
   // Alt screen: there is no scrollback to preserve; the whole buffer is
   // ours, so clear-and-repaint stays the cheapest correct option.
   const screen = new VirtualScreen({ x: 0, y: 0 }, frame.viewport.width)
-  renderFrame(screen, frame, stylePool)
+  renderFrameSlice(screen, frame, 0, frame.screen.height, stylePool, !altScreen)
   return [{ type: 'clearTerminal', reason, debug }, ...screen.diff]
 }
 
@@ -609,13 +653,27 @@ function buildStyledRow(
   screen: Screen,
   y: number,
   stylePool: StylePool,
+  viewportWidth?: number,
 ): string {
   let line = ''
   let currentStyles: AnsiCode[] = []
   let currentHyperlink: Hyperlink
-  for (let x = 0; x < screen.width; x++) {
+  for (
+    let x = 0;
+    x < Math.min(screen.width, viewportWidth ?? screen.width);
+    x++
+  ) {
     const cell = cellAt(screen, x, y)
-    if (cell && cell.width !== CellWidth.SpacerTail) {
+    if (
+      cell &&
+      cell.width !== CellWidth.SpacerTail &&
+      cell.width !== CellWidth.SpacerHead
+    ) {
+      if (
+        viewportWidth !== undefined &&
+        !cellFitsViewport(cell, x, viewportWidth)
+      )
+        continue
       if (cell.hyperlink !== currentHyperlink) {
         if (currentHyperlink !== undefined) {
           line += LINK_END
@@ -631,7 +689,15 @@ function buildStyledRow(
         line += ansiCodesToString(styleDiff)
         currentStyles = cellStyles
       }
+      const compensate =
+        viewportWidth !== undefined &&
+        cell.width === CellWidth.Wide &&
+        needsWidthCompensation(cell.char)
+      if (compensate) {
+        line += cursorTo(x + 2) + ' ' + cursorTo(x + 1)
+      }
       line += cell.char
+      if (compensate) line += cursorTo(x + 3)
     }
   }
   if (currentHyperlink !== undefined) {
@@ -644,88 +710,31 @@ function buildStyledRow(
   return line
 }
 
-/**
- * Main-screen viewport repaint: redraw ONLY the visible viewport using
- * absolute cursor positioning (CSI row;1 H), never scrolling and never
- * touching scrollback.
- *
- * Why every terminal needs this (not just conhost): clearing the screen for
- * a full reset (ESC[2J + ESC[3J + home) destroys the terminal's scrollback.
- * On a long session that erases the user's history and leaves the viewport
- * at the top of the freshly painted frame — the "chat suddenly jumped back
- * to the very beginning" bug. It also loses the user's scroll-back position
- * when they were reading older output. Absolute-positioned repaint leaves
- * scrollback intact and never moves the viewport.
- *
- * Original motivation on legacy Windows consoles (conhost via libuv): ESC[3J
- * is dropped, so the clear+repaint path stacks old frame copies, and
- * conhost yanks the viewport on relative cursor-up into scrollback, so the
- * incremental relative-move path smears.
- *
- * The frame's bottom `viewport.height` rows map to physical rows 1..vh. Each
- * row: CSI p;1 H + styled content + ESC[K (clears any longer prior content).
- * Rows below the content (when the frame is shorter than the viewport) are
- * blanked with ESC[K. Scrollback rows (above the viewport) are left as-is —
- * they were painted correctly when they scrolled off and can't be reached.
- *
- * Repaints ALL visible rows (not just changed ones) — this path only runs on
- * the infrequent full-reset (first overflow / resize / large shrink), so the
- * cost is negligible and it avoids the "only repaint changed rows → lost
- * output" failure mode of the earlier full-frame repaint approach.
- *
- * Cursor end-state mirrors the normal full-reset (renderFrame ends below the
- * last content row at column 0): when the logical cursor sits below a full
- * viewport, park at the bottom and emit one LF so the next frame's
- * cursorRestoreScroll accounting holds; otherwise park at the cursor's mapped
- * visible row/column.
- */
-// Exported for testing (the gates that reach it are terminal/platform
-// dependent; this lets tests exercise the repaint directly).
-export function viewportRepaint(
-  frame: Frame,
-  stylePool: StylePool,
-  avoidScroll = false,
-): Diff {
+export function viewportRepaint(frame: Frame, stylePool: StylePool): Diff {
   const screen = frame.screen
   const vh = frame.viewport.height
   const sh = screen.height
   if (vh <= 0) {
     return []
   }
-  // First screen row that is visible (top of the viewport). When the frame is
-  // taller than the viewport, the bottom vh rows are visible; otherwise all.
-  const topScreenY = Math.max(
-    0,
-    sh - vh + (avoidScroll && frame.cursor.y >= sh ? 1 : 0),
-  )
+  // Reserve a row for the logical cursor (it may sit one row below the
+  // content). Parking it absolutely keeps the following incremental diffs
+  // aligned and never emits the trailing LF that would scroll one extra row
+  // into history.
+  const topScreenY = Math.max(0, Math.max(sh, frame.cursor.y + 1) - vh)
   let out = ''
   for (let p = 1; p <= vh; p++) {
     const screenY = topScreenY + (p - 1)
     out += cursorPosition(p, 1)
     out += eraseToEndOfLine()
     if (screenY < sh) {
-      out += buildStyledRow(screen, screenY, stylePool)
+      out += buildStyledRow(screen, screenY, stylePool, frame.viewport.width)
     }
   }
-  // Park the physical cursor where the normal full-reset leaves it: screen
-  // coord (0, sh) — column 0, just past the last content row. renderFrame
-  // reaches that via a CR+LF after every row; we replicate the net end-state
-  // without the scrollback-stacking clear, so the engine and ink.tsx cursor
-  // parking (which already operate correctly from this state on the normal
-  // path) behave identically. ink.tsx then moves to the IME/input cursor.
-  const physBottomRow = sh - topScreenY + 1
-  if (avoidScroll) {
-    out += cursorPosition(
-      Math.min(vh, Math.max(1, frame.cursor.y - topScreenY + 1)),
-      frame.cursor.x + 1,
-    )
-  } else if (physBottomRow > vh) {
-    // Content fills/overflows the viewport: park at the bottom row and scroll
-    // one fresh line (the net effect of renderFrame's trailing LF).
-    out += cursorPosition(vh, 1) + NEWLINE.content
-  } else {
-    out += cursorPosition(Math.max(physBottomRow, 1), 1)
-  }
+  out += cursorPosition(
+    Math.min(vh, Math.max(1, frame.cursor.y - topScreenY + 1)),
+    frame.cursor.x + 1,
+  )
   return [{ type: 'stdout', content: out }]
 }
 
@@ -734,14 +743,6 @@ export function viewportRepaint(
  * Windows-console-only; main-screen full resets use it on every terminal.
  */
 export const legacyWindowsViewportRepaint = viewportRepaint
-
-function renderFrame(
-  screen: VirtualScreen,
-  frame: Frame,
-  stylePool: StylePool,
-): void {
-  renderFrameSlice(screen, frame, 0, frame.screen.height, stylePool)
-}
 
 /**
  * Render a slice of rows from the frame's screen.
@@ -753,6 +754,7 @@ function renderFrameSlice(
   startY: number,
   endY: number,
   stylePool: StylePool,
+  trailingNewline = true,
 ): VirtualScreen {
   let currentStyleId = stylePool.none
   let currentHyperlink: Hyperlink
@@ -835,7 +837,9 @@ function renderFrameSlice(
     // CR+LF at end of row — \r resets to column 0, \n moves to next line.
     // Without \r, the terminal cursor stays at whatever column content ended
     // (since we skip trailing spaces, this can be mid-row).
-    screen.txn(prev => [[CARRIAGE_RETURN, NEWLINE], { dx: -prev.x, dy: 1 }])
+    if (trailingNewline || y < endY - 1) {
+      screen.txn(prev => [[CARRIAGE_RETURN, NEWLINE], { dx: -prev.x, dy: 1 }])
+    }
   }
 
   // Reset any open style/hyperlink at end of slice
@@ -867,15 +871,7 @@ function writeCellWithStyleStr(
   const px = screen.cursor.x
   const vw = screen.viewportWidth
 
-  // Don't write wide chars that would cross the viewport edge.
-  // Single-codepoint chars (CJK) at vw-2 are safe; multi-codepoint
-  // graphemes (flags, ZWJ emoji) need stricter threshold.
-  if (cellWidth === 2 && px < vw) {
-    const threshold = cell.char.length > 2 ? vw : vw + 1
-    if (px + 2 >= threshold) {
-      return false
-    }
-  }
+  if (!cellFitsViewport(cell, px, vw)) return false
 
   const diff = screen.diff
   if (styleStr.length > 0) {
@@ -911,6 +907,16 @@ function writeCellWithStyleStr(
     screen.cursor.x = px + cellWidth
   }
   return true
+}
+
+function cellFitsViewport(
+  cell: Cell,
+  column: number,
+  viewportWidth: number,
+): boolean {
+  if (cell.width !== CellWidth.Wide || column >= viewportWidth) return true
+  const threshold = cell.char.length > 2 ? viewportWidth : viewportWidth + 1
+  return column + 2 < threshold
 }
 
 function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number) {
