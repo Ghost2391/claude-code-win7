@@ -22,6 +22,8 @@ import {
 } from './screen.js'
 import {
   CURSOR_HOME,
+  cursorPosition,
+  eraseToEndOfLine,
   scrollDown as csiScrollDown,
   scrollUp as csiScrollUp,
   RESET_SCROLL_REGION,
@@ -525,12 +527,99 @@ function readLine(screen: Screen, y: number): string {
   return line.trimEnd()
 }
 
+/**
+ * Build one screen row as a styled string without cursor positioning. Skips
+ * SpacerTail (the wide char itself advances two columns) and resets SGR at the
+ * end so the following ESC[K doesn't inherit a color.
+ */
+function buildStyledRow(
+  screen: Screen,
+  y: number,
+  stylePool: StylePool,
+): string {
+  let line = ''
+  let currentStyles: AnsiCode[] = []
+  let currentHyperlink: Hyperlink
+  for (let x = 0; x < screen.width; x++) {
+    const cell = cellAt(screen, x, y)
+    if (cell && cell.width !== CellWidth.SpacerTail) {
+      if (cell.hyperlink !== currentHyperlink) {
+        if (currentHyperlink !== undefined) {
+          line += LINK_END
+        }
+        if (cell.hyperlink !== undefined) {
+          line += oscLink(cell.hyperlink)
+        }
+        currentHyperlink = cell.hyperlink
+      }
+      const cellStyles = stylePool.get(cell.styleId)
+      const styleDiff = diffAnsiCodes(currentStyles, cellStyles)
+      if (styleDiff.length > 0) {
+        line += ansiCodesToString(styleDiff)
+        currentStyles = cellStyles
+      }
+      line += cell.char
+    }
+  }
+  if (currentHyperlink !== undefined) {
+    line += LINK_END
+  }
+  const resetCodes = diffAnsiCodes(currentStyles, [])
+  if (resetCodes.length > 0) {
+    line += ansiCodesToString(resetCodes)
+  }
+  return line
+}
+
+/**
+ * Main-screen reset that preserves the terminal scrollback: repaint only the
+ * visible viewport by absolute row (CUP + ESC[K + content), never scroll and
+ * never clear. `clearTerminal` (ESC[2J + ESC[3J + home) wipes the scrollback,
+ * which is what makes the conversation suddenly "jump back to the top" and
+ * flashes the whole screen. Duplicate history rows are possible after
+ * shrink/grow cycles; that is the accepted tradeoff.
+ */
+function viewportRepaint(frame: Frame, stylePool: StylePool): Diff {
+  const screen = frame.screen
+  const vh = frame.viewport.height
+  const sh = screen.height
+  if (vh <= 0) {
+    return []
+  }
+  // Bottom `vh` rows, reserving a row for a logical cursor that sits below the
+  // content — parking it absolutely keeps the next incremental diff aligned.
+  const topScreenY = Math.max(0, Math.max(sh, frame.cursor.y + 1) - vh)
+  let out = ''
+  for (let p = 1; p <= vh; p++) {
+    const screenY = topScreenY + (p - 1)
+    out += cursorPosition(p, 1)
+    out += eraseToEndOfLine()
+    if (screenY < sh) {
+      out += buildStyledRow(screen, screenY, stylePool)
+    }
+  }
+  out += cursorPosition(
+    Math.min(vh, Math.max(1, frame.cursor.y - topScreenY + 1)),
+    frame.cursor.x + 1,
+  )
+  return [{ type: 'stdout', content: out }]
+}
+
 function fullResetSequence_CAUSES_FLICKER(
   frame: Frame,
   reason: FlickerReason,
   stylePool: StylePool,
   debug?: { triggerY: number; prevLine: string; nextLine: string },
 ): Diff {
+  // Legacy conhost drifts on absolute/incremental updates, so keep the
+  // clear-and-rebuild path there (its 2J-only sequence can't wipe scrollback
+  // anyway). Everywhere else repaint in place to preserve history.
+  if (
+    !isLegacyWindowsConsole() &&
+    process.env.CLAUDE_CODE_FULL_CLEAR_ON_RESET !== '1'
+  ) {
+    return viewportRepaint(frame, stylePool)
+  }
   // After clearTerminal, cursor is at (0, 0)
   const screen = new VirtualScreen({ x: 0, y: 0 }, frame.viewport.width)
   renderFrame(screen, frame, stylePool)
