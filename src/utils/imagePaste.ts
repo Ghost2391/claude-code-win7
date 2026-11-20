@@ -72,9 +72,14 @@ function getClipboardCommands() {
       deleteFile: `rm -f "${screenshotPath}"`,
     },
     win32: {
+      // -STA is required for clipboard access from PowerShell. The target
+      // path is derived from $env:TEMP inside PowerShell (same location as
+      // screenshotPath) so no interpolation can corrupt it; the previous
+      // version doubled the backslashes inside a single-quoted literal,
+      // producing an invalid path and silently failing every paste.
       checkImage:
-        'powershell -NoProfile -Command "(Get-Clipboard -Format Image) -ne $null"',
-      saveImage: `powershell -NoProfile -Command "$img = Get-Clipboard -Format Image; if ($img) { $img.Save('${screenshotPath.replace(/\\/g, '\\\\')}', [System.Drawing.Imaging.ImageFormat]::Png) }"`,
+        'powershell -NoProfile -STA -Command "Add-Type -AssemblyName System.Windows.Forms; if ([System.Windows.Forms.Clipboard]::ContainsImage()) { exit 0 } else { exit 1 }"',
+      saveImage: `powershell -NoProfile -STA -Command "$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $p = Join-Path $env:TEMP '${screenshotFilename}'; $img = [System.Windows.Forms.Clipboard]::GetImage(); if (-not $img) { exit 1 }; $img.Save($p, [System.Drawing.Imaging.ImageFormat]::Png); exit 0"`,
       getPath: 'powershell -NoProfile -Command "Get-Clipboard"',
       deleteFile: `del /f "${screenshotPath}"`,
     },
@@ -96,33 +101,45 @@ export type ImageWithDimensions = {
  * Check if clipboard contains an image without retrieving it.
  */
 export async function hasImageInClipboard(): Promise<boolean> {
-  if (process.platform !== 'darwin') {
+  if (process.platform === 'darwin') {
+    if (
+      feature('NATIVE_CLIPBOARD_IMAGE') &&
+      getFeatureValue_CACHED_MAY_BE_STALE('tengu_collage_kaleidoscope', true)
+    ) {
+      // Native NSPasteboard check (~0.03ms warm). Fall through to osascript
+      // when the module/export is missing. Catch a throw too: it would surface
+      // as an unhandled rejection in useClipboardImageHint's setTimeout.
+      try {
+        const { getNativeModule } = await import('image-processor-napi')
+        const nativeModule = getNativeModule()
+        if (nativeModule && 'hasClipboardImage' in nativeModule) {
+          const hasImage = (nativeModule as unknown as Record<string, Function>)
+            .hasClipboardImage
+          if (hasImage) return hasImage()
+        }
+      } catch (e) {
+        logError(e as Error)
+      }
+    }
+    const result = await execFileNoThrowWithCwd('osascript', [
+      '-e',
+      'the clipboard as «class PNGf»',
+    ])
+    return result.code === 0
+  }
+
+  // Windows / Linux: probe with the same command getImageFromClipboard uses.
+  // Missing tools (xclip/wl-paste) or a non-image clipboard exit non-zero.
+  const { commands } = getClipboardCommands()
+  try {
+    const result = await execa(commands.checkImage, {
+      shell: true,
+      reject: false,
+    })
+    return result.exitCode === 0
+  } catch {
     return false
   }
-  if (
-    feature('NATIVE_CLIPBOARD_IMAGE') &&
-    getFeatureValue_CACHED_MAY_BE_STALE('tengu_collage_kaleidoscope', true)
-  ) {
-    // Native NSPasteboard check (~0.03ms warm). Fall through to osascript
-    // when the module/export is missing. Catch a throw too: it would surface
-    // as an unhandled rejection in useClipboardImageHint's setTimeout.
-    try {
-      const { getNativeModule } = await import('image-processor-napi')
-      const nativeModule = getNativeModule()
-      if (nativeModule && 'hasClipboardImage' in nativeModule) {
-        const hasImage = (nativeModule as unknown as Record<string, Function>)
-          .hasClipboardImage
-        if (hasImage) return hasImage()
-      }
-    } catch (e) {
-      logError(e as Error)
-    }
-  }
-  const result = await execFileNoThrowWithCwd('osascript', [
-    '-e',
-    'the clipboard as «class PNGf»',
-  ])
-  return result.code === 0
 }
 
 export async function getImageFromClipboard(): Promise<ImageWithDimensions | null> {

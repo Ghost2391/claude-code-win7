@@ -176,9 +176,11 @@ export function usePasteHandler({
               return { chunks: [], timeoutId: null }
             }
 
-            // If paste is empty (common when trying to paste images with Cmd+V),
-            // check if clipboard has an image (macOS only)
-            if (isMacOS && onImagePaste && pastedText.length === 0) {
+            // Empty paste usually means the clipboard holds an image (Cmd+V on
+            // macOS, Ctrl+V in terminals that emit an empty bracketed paste).
+            // Probe the clipboard on every platform; non-image clipboards just
+            // resolve to null.
+            if (onImagePaste && pastedText.length === 0) {
               checkClipboardForImage()
               return { chunks: [], timeoutId: null }
             }
@@ -238,11 +240,11 @@ export function usePasteHandler({
       .flatMap(part => part.split('\n'))
       .some(line => isImageFilePath(line.trim()))
 
-    // Handle empty paste (clipboard image on macOS)
-    // When the user pastes an image with Cmd+V, the terminal sends an empty
-    // bracketed paste sequence. The keypress parser emits this as isPasted=true
-    // with empty input.
-    if (isFromPaste && input.length === 0 && isMacOS && onImagePaste) {
+    // Handle empty paste (clipboard image). When the user pastes an image,
+    // terminals send an empty bracketed paste sequence; the keypress parser
+    // emits it as isPasted=true with empty input. Applies to all platforms —
+    // getImageFromClipboard returns null when the clipboard has no image.
+    if (isFromPaste && input.length === 0 && onImagePaste) {
       checkClipboardForImage()
       // Reset isPasting since there's no text content to process
       setIsPasting(false)
