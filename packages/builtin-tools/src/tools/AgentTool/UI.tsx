@@ -22,7 +22,6 @@ import { getSearchOrReadFromContent, getSearchReadSummaryText } from 'src/utils/
 import { getDisplayPath } from 'src/utils/file.js';
 import { formatDuration, formatNumber } from 'src/utils/format.js';
 import { buildSubagentLookups, createAssistantMessage, EMPTY_LOOKUPS } from 'src/utils/messages.js';
-import type { ModelAlias } from 'src/utils/model/aliases.js';
 import { getMainLoopModel, parseUserSpecifiedModel, renderModelName } from 'src/utils/model/model.js';
 import type { Theme, ThemeName } from 'src/utils/theme.js';
 import type { outputSchema, Progress, RemoteLaunchedOutput } from './AgentTool.js';
@@ -435,7 +434,7 @@ export function renderToolUseTag(
     description: string;
     prompt: string;
     subagent_type: string;
-    model?: ModelAlias;
+    model?: string;
   }>,
 ): React.ReactNode {
   const tags: React.ReactNode[] = [];

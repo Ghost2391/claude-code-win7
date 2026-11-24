@@ -123,7 +123,9 @@ The ${AGENT_TOOL_NAME} tool launches specialized agents (subprocesses) that auto
 
 ${agentListSection}
 
-When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to select which agent type to use. If omitted, the general-purpose agent is used.${forkEnabled ? ` Set \`fork: true\` to fork from the parent conversation context, inheriting full history and model.` : ''}`
+When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to select which agent type to use. If omitted, the general-purpose agent is used.${forkEnabled ? ` Set \`fork: true\` to fork from the parent conversation context, inheriting full history and model.` : ''}
+
+The optional \`model\` parameter overrides the agent's model. It accepts a model alias or any configured model name (for example a provider profile customModels entry). Omit it to use the agent definition's model or inherit from the parent.`
 
   // Coordinator mode gets the slim prompt -- the coordinator system prompt
   // already covers usage notes, examples, and when-not-to-use guidance.

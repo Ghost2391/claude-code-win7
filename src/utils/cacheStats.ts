@@ -25,14 +25,20 @@ export interface CacheStatsState {
 // ---------------------------------------------------------------------------
 
 /**
- * Compute integer hit rate (0–100) or null if denominator is zero / input null.
+ * Compute hit rate (0–100) with one decimal place, or null if denominator is
+ * zero / input is null.
  */
 export function computeHitRate(u: CacheUsage | null): number | null {
   if (!u) return null
   const denom =
     u.input_tokens + u.cache_creation_input_tokens + u.cache_read_input_tokens
   if (denom === 0) return null
-  return Math.round((u.cache_read_input_tokens / denom) * 100)
+  return Math.round((u.cache_read_input_tokens / denom) * 1000) / 10
+}
+
+/** Format a hit rate for the status line, always with one decimal place. */
+export function formatHitRate(rate: number | null): string {
+  return rate === null ? '--%' : `${rate.toFixed(1)}%`
 }
 
 /**

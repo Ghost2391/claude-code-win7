@@ -63,7 +63,6 @@ import {
   endTrace,
   isLangfuseEnabled,
 } from 'src/services/langfuse/index.js'
-import type { ModelAlias } from 'src/utils/model/aliases.js'
 import {
   clearAgentTranscriptSubdir,
   recordSidechainTranscript,
@@ -294,7 +293,7 @@ export async function* runAgent({
     abortController?: AbortController
     agentId?: AgentId
   }
-  model?: ModelAlias
+  model?: string
   maxTurns?: number
   /** Preserve toolUseResult on messages for subagents with viewable transcripts */
   preserveToolUseResults?: boolean

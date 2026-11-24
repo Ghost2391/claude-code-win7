@@ -42,7 +42,7 @@ import { getCurrentSessionTitle } from '../utils/sessionStorage.js';
 import { doesMostRecentAssistantMessageExceed200k, getCurrentUsage } from '../utils/tokens.js';
 import { getCurrentWorktreeSession } from '../utils/worktree.js';
 import { isVimModeEnabled } from './PromptInput/utils.js';
-import { computeHitRate, tokenSignature } from '../utils/cacheStats.js';
+import { computeHitRate, formatHitRate, tokenSignature } from '../utils/cacheStats.js';
 import { onResponse as cacheOnResponse, getCacheStatsState, initCacheStatsState } from '../utils/cacheStatsState.js';
 import { BuiltinStatusLine } from './BuiltinStatusLine.js';
 import { formatTokens } from 'src/utils/format.js';
@@ -129,7 +129,7 @@ function CachePill({ messages }: CachePillProps): React.ReactNode {
   }
 
   const countdownText = remaining !== null ? formatCountdown(remaining) : '--:--';
-  const hitRateText = displayHitRate !== null ? `${displayHitRate}%` : '--%';
+  const hitRateText = formatHitRate(displayHitRate);
 
   // Timer color by elapsed bucket — using theme keys
   type TimerThemeKey = 'success' | 'warning' | 'error' | 'inactive';

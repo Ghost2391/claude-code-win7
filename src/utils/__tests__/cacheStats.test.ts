@@ -137,6 +137,7 @@ mock.module('src/utils/envUtils.js', () => ({
 
 import {
   computeHitRate,
+  formatHitRate,
   tokenSignature,
   getStateFilePath,
   readState,
@@ -185,23 +186,41 @@ describe('computeHitRate', () => {
     expect(computeHitRate(usage(1000, 0, 0))).toBe(0)
   })
 
-  test('rounds to integer (50%)', () => {
+  test('returns one decimal for whole percentages', () => {
     expect(computeHitRate(usage(500, 0, 500))).toBe(50)
   })
 
-  test('rounds fractional values', () => {
-    // read=1, total=3 → 33.33... → rounds to 33
-    expect(computeHitRate(usage(2, 0, 1))).toBe(33)
+  test('rounds fractional values to one decimal', () => {
+    // read=1, total=3 → 33.33... → 33.3
+    expect(computeHitRate(usage(2, 0, 1))).toBe(33.3)
   })
 
   test('handles large numbers without overflow', () => {
     const big = 1_000_000_000
-    expect(computeHitRate(usage(big, big, big))).toBe(33)
+    expect(computeHitRate(usage(big, big, big))).toBe(33.3)
   })
 
   test('cache_creation does not count as reads', () => {
     // Only cache_read_input_tokens in numerator
     expect(computeHitRate(usage(0, 1000, 0))).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// formatHitRate
+// ---------------------------------------------------------------------------
+
+describe('formatHitRate', () => {
+  test('shows one decimal place for whole percentages', () => {
+    expect(formatHitRate(97)).toBe('97.0%')
+  })
+
+  test('keeps one decimal place for fractional percentages', () => {
+    expect(formatHitRate(33.3)).toBe('33.3%')
+  })
+
+  test('shows placeholder when rate is null', () => {
+    expect(formatHitRate(null)).toBe('--%')
   })
 })
 
@@ -361,7 +380,7 @@ describe('onResponse', () => {
     expect(s.signature).toBe(tokenSignature(u))
     expect(s.lastResetAt).toBeGreaterThanOrEqual(before)
     expect(s.lastResetAt).toBeLessThanOrEqual(after)
-    expect(s.lastHitRate).toBe(33) // 50/(100+50) ≈ 33
+    expect(s.lastHitRate).toBe(33.3) // 50/(100+50) ≈ 33.3
   })
 
   test('same signature does NOT reset lastResetAt', async () => {
